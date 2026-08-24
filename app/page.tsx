@@ -138,6 +138,14 @@ export default function Home() {
     return undefined;
   }
 
+  function navigationLabel(item: { id: View; label: string }) {
+    if (!activeResearch) return item.label;
+    if (item.id === 'traces') return 'Cases';
+    if (item.id === 'policies') return 'Conclusion';
+    if (item.id === 'evals') return 'Integration';
+    return item.label;
+  }
+
   function startExperiment() {
     setRunState('running');
     setDrawer('experiment');
@@ -155,13 +163,13 @@ export default function Home() {
       <aside className="sidebar">
         <button className="brand" onClick={() => navigate('overview')}><Mark /><span>toolvalue</span><i>beta</i></button>
         <div className="workspace">
-          <span className="workspace-avatar">B</span>
-          <span><b>Baselayer</b><small>{activeResearch ? 'Research source profiling' : 'Business enrichment'}</small></span>
+          <span className="workspace-avatar">T</span>
+          <span><b>ToolValue</b><small>{activeResearch ? 'Live experiment dashboard' : 'Demo workspace'}</small></span>
           <i>⌄</i>
         </div>
         <nav aria-label="Product navigation">
           {navigation.map(group => <div key={group.group}><p>{group.group}</p>{group.items.map(item => (
-            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span>{item.icon}</span>{item.label}{navigationCount(item) && <em>{navigationCount(item)}</em>}</button>
+            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span>{item.icon}</span>{navigationLabel(item)}{navigationCount(item) && <em>{navigationCount(item)}</em>}</button>
           ))}</div>)}
         </nav>
         <div className="sidebar-bottom">
@@ -172,7 +180,8 @@ export default function Home() {
 
       <section className="content">
         <header className="topbar">
-          <div className="breadcrumbs"><span>{activeTitle}</span><i>/</i><b>{navigation.flatMap(group => group.items).find(item => item.id === view)?.label}</b></div>
+          <div className="breadcrumbs"><span>{activeTitle}</span><i>/</i><b>{navigationLabel(navigation.flatMap(group => group.items).find(item => item.id === view) ?? { id: view, label: view })}</b></div>
+          <label className="mobile-view-switcher"><span>View</span><select aria-label="Select dashboard view" value={view} onChange={event => navigate(event.target.value as View)}>{navigation.flatMap(group => group.items).map(item => <option value={item.id} key={item.id}>{navigationLabel(item)}</option>)}</select></label>
           <div className="top-actions"><label className="experiment-switcher"><span>Experiment</span><select aria-label="Select dashboard experiment" value={activeExperimentId} onChange={event => selectExperiment(event.target.value)}>{researchExperiments.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}<option value="industry-demo">Industry classification · demo</option></select></label><button className="icon-button" aria-label="Notifications">●</button>{activeResearch ? <button className="run-button" onClick={() => navigate('experiments')}>View run <span>↗</span></button> : <button className="run-button" onClick={startExperiment}>Run experiment <span>R</span></button>}</div>
         </header>
 
