@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -16,6 +17,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="profile-smolagents",
         description="Run ToolValue against a real Hugging Face smolagents ToolCallingAgent",
+    )
+    parser.add_argument(
+        "--backend",
+        choices=("scripted", "openrouter"),
+        default="scripted",
+        help="decision model backend; OpenRouter makes real LLM calls",
+    )
+    parser.add_argument(
+        "--model",
+        default=os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+        help="OpenRouter model ID; must support tool calling",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        help="number of incidents; defaults to all scripted cases or one OpenRouter case",
     )
     parser.add_argument(
         "--store",
@@ -34,18 +51,36 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    limit = args.limit if args.limit is not None else (1 if args.backend == "openrouter" else len(INCIDENTS))
+    if not 1 <= limit <= len(INCIDENTS):
+        print(f"--limit must be between 1 and {len(INCIDENTS)}", file=sys.stderr)
+        return 2
+    api_key = os.getenv("OPENROUTER_API_KEY") if args.backend == "openrouter" else None
+    if args.backend == "openrouter" and not api_key:
+        print(
+            "OPENROUTER_API_KEY is not set. Export it in your shell; do not pass it as a CLI argument.",
+            file=sys.stderr,
+        )
+        return 2
+    cases = INCIDENTS[:limit]
     with SQLiteStore(args.store) as store:
-        agent = build_agent(store=store)
-        report = agent.evaluate(INCIDENTS)
+        agent = build_agent(
+            store=store,
+            model_backend=args.backend,
+            openrouter_api_key=api_key,
+            openrouter_model_id=args.model,
+        )
+        report = agent.evaluate(cases)
 
     tools_per_case = len(TOOL_ORDER)
-    expected_tool_calls = len(INCIDENTS) * tools_per_case
-    expected_model_runs = len(INCIDENTS) * (tools_per_case + 1) ** 2
+    expected_tool_calls = len(cases) * tools_per_case
+    expected_model_runs = len(cases) * (tools_per_case + 1) ** 2
 
     print(f"Hugging Face smolagents {smolagents.__version__}")
+    print(f"Model backend: {agent.model_backend} ({agent.model_id})")
     print(render_report(report))
     print("\nBaseline incident decisions")
-    for case, case_profile in zip(INCIDENTS, report.profiles):
+    for case, case_profile in zip(cases, report.profiles):
         print(
             f"  {case.args[0]:22} "
             f"predicted={case_profile.baseline.output:<12} "
@@ -56,14 +91,30 @@ def main(argv: list[str] | None = None) -> int:
         f"\nFixture tool executions: {agent.external_tool_calls} observed / "
         f"{expected_tool_calls} expected (baselines only)"
     )
-    print(
-        f"smolagents model calls:  {agent.model_runs} observed / "
-        f"{expected_model_runs} expected (baseline + ablations)"
-    )
+    if args.backend == "scripted":
+        print(
+            f"Scripted model calls:    {agent.model_runs} observed / "
+            f"{expected_model_runs} expected (baseline + ablations)"
+        )
+    else:
+        print(f"OpenRouter LLM calls:    {agent.model_runs}")
+        print(f"OpenRouter input tokens: {agent.input_tokens}")
+        print(f"OpenRouter output tokens:{agent.output_tokens:>6}")
+        print(f"OpenRouter reported cost:{agent.model_cost:>9.6f} credits")
 
     args.json.parent.mkdir(parents=True, exist_ok=True)
+    payload = report.to_dict(include_profiles=True, include_content=False)
+    payload["experiment"] = {
+        "model_backend": agent.model_backend,
+        "model_id": agent.model_id,
+        "model_calls": agent.model_runs,
+        "input_tokens": agent.input_tokens,
+        "output_tokens": agent.output_tokens,
+        "openrouter_reported_cost": agent.model_cost,
+        "underlying_tool_executions": agent.external_tool_calls,
+    }
     args.json.write_text(
-        json.dumps(report.to_dict(include_profiles=True, include_content=False), indent=2) + "\n",
+        json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",
     )
     print(f"Report written to {args.json}")
@@ -72,8 +123,17 @@ def main(argv: list[str] | None = None) -> int:
     if report.replay_integrity != 1.0:
         print("Replay integrity check failed", file=sys.stderr)
         return 1
-    if agent.external_tool_calls != expected_tool_calls or agent.model_runs != expected_model_runs:
+    if agent.external_tool_calls != expected_tool_calls:
         print("Execution-count invariant failed", file=sys.stderr)
+        return 1
+    if any(len(case.counterfactuals) != tools_per_case for case in report.profiles):
+        print("Not every baseline called all four required tools", file=sys.stderr)
+        return 1
+    if args.backend == "scripted" and agent.model_runs != expected_model_runs:
+        print("Scripted model-count invariant failed", file=sys.stderr)
+        return 1
+    if args.backend == "openrouter" and (agent.model_runs == 0 or agent.input_tokens == 0):
+        print("No verifiable OpenRouter model usage was recorded", file=sys.stderr)
         return 1
     return 0
 

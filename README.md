@@ -219,6 +219,21 @@ python3 -m venv .venv
 .venv/bin/python -m smolagents_profiler
 ```
 
+To replace the scripted decision adapter with a real OpenRouter LLM, export
+`OPENROUTER_API_KEY` and run a single paid case first:
+
+```bash
+cd smolagents-sample
+read -s OPENROUTER_API_KEY && export OPENROUTER_API_KEY
+.venv/bin/python -m smolagents_profiler \
+  --backend openrouter --model openai/gpt-4o-mini --limit 1
+unset OPENROUTER_API_KEY
+```
+
+The [integration instructions](smolagents-sample/README.md) explain the expected
+request count and how to verify LLM calls, token usage, reported cost, and
+replay integrity.
+
 ## Strict replay
 
 Counterfactual runs never fetch new external evidence:

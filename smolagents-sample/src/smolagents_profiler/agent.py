@@ -4,7 +4,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from smolagents import ChatMessage, ChatMessageToolCall, MessageRole, Model, Tool, ToolCallingAgent
+from smolagents import ChatMessage, ChatMessageToolCall, MessageRole, Model, OpenAIModel, Tool, ToolCallingAgent
 from smolagents.models import ChatMessageToolCallFunction
 from toolvalue import EvalCase, ProfileReport, model as value_model
 from toolvalue import profile, tool as value_tool
@@ -20,10 +20,33 @@ TOOL_ORDER = (
     "oncall_signal",
 )
 
+TRIAGE_INSTRUCTIONS = """
+For every incident, call exactly one tool per turn in this order:
+deployment_signal, telemetry_signal, runbook_signal, oncall_signal.
+Call every tool exactly once, even when an earlier observation is unavailable.
+After all four observations, return exactly one lowercase label through
+final_answer using this policy:
+- rollback when RUNBOOK_ACTION=rollback, or when DEPLOYMENT_RISK=high and ERROR_STATE=spiking;
+- investigate when exactly one of DEPLOYMENT_RISK=high or ERROR_STATE=spiking is present;
+- healthy otherwise.
+ToolUnavailable means that signal is missing. Do not infer a missing signal.
+The on-call identity never changes the classification.
+""".strip()
+
 
 def exact_match(output: str, expected: str) -> float:
     """Independent, deterministic evaluation with no model-as-judge."""
     return float(output == expected)
+
+
+def _openrouter_response_cost(message: ChatMessage) -> float:
+    raw = getattr(message, "raw", None)
+    usage = getattr(raw, "usage", None)
+    cost = getattr(usage, "cost", None)
+    if cost is None:
+        model_extra = getattr(usage, "model_extra", None) or {}
+        cost = model_extra.get("cost")
+    return float(cost or 0.0)
 
 
 def _message_text(message: ChatMessage) -> str:
@@ -64,7 +87,7 @@ class ScriptedTriageModel(Model):
     and smolagents behavior without requiring a model download or API key.
     """
 
-    def __init__(self, counters: dict[str, int]) -> None:
+    def __init__(self, counters: dict[str, float]) -> None:
         super().__init__(model_id="toolvalue/scripted-triage")
         self._counters = counters
 
@@ -128,6 +151,56 @@ class ScriptedTriageModel(Model):
         )
 
 
+class OpenRouterTriageModel(Model):
+    """Profiled smolagents model backed by OpenRouter's OpenAI-compatible API."""
+
+    def __init__(
+        self,
+        counters: dict[str, float],
+        *,
+        api_key: str,
+        model_id: str,
+    ) -> None:
+        super().__init__(model_id=model_id)
+        self._counters = counters
+        self._delegate = OpenAIModel(
+            model_id=model_id,
+            api_base="https://openrouter.ai/api/v1",
+            api_key=api_key,
+            temperature=0,
+            max_tokens=128,
+            client_kwargs={
+                "default_headers": {
+                    "HTTP-Referer": "https://github.com/EswarSk/toolvalue",
+                    "X-OpenRouter-Title": "ToolValue smolagents experiment",
+                }
+            },
+        )
+
+    @value_model(name="openrouter_llm", cost=_openrouter_response_cost)
+    def generate(
+        self,
+        messages: list[ChatMessage],
+        stop_sequences: list[str] | None = None,
+        response_format: dict[str, str] | None = None,
+        tools_to_call_from: list[Tool] | None = None,
+        **kwargs: Any,
+    ) -> ChatMessage:
+        self._counters["model"] += 1
+        result = self._delegate.generate(
+            messages,
+            stop_sequences=stop_sequences,
+            response_format=response_format,
+            tools_to_call_from=tools_to_call_from,
+            **kwargs,
+        )
+        token_usage = getattr(result, "token_usage", None)
+        self._counters["input_tokens"] += float(getattr(token_usage, "input_tokens", 0) or 0)
+        self._counters["output_tokens"] += float(getattr(token_usage, "output_tokens", 0) or 0)
+        self._counters["model_cost"] += _openrouter_response_cost(result)
+        return result
+
+
 class _FixtureTool(Tool):
     inputs = {
         "service": {
@@ -140,7 +213,7 @@ class _FixtureTool(Tool):
     def __init__(
         self,
         fixtures: Mapping[str, Mapping[str, str]],
-        counters: dict[str, int],
+        counters: dict[str, float],
     ) -> None:
         self._fixtures = fixtures
         self._counters = counters
@@ -196,7 +269,9 @@ class OnCallSignalTool(_FixtureTool):
 @dataclass
 class ProfiledSmolAgent:
     function: Callable[..., str]
-    counters: dict[str, int]
+    counters: dict[str, float]
+    model_backend: str
+    model_id: str
 
     def __call__(self, service: str) -> str:
         return self.function(service)
@@ -209,20 +284,51 @@ class ProfiledSmolAgent:
 
     @property
     def external_tool_calls(self) -> int:
-        return sum(self.counters[name] for name in TOOL_ORDER)
+        return int(sum(self.counters[name] for name in TOOL_ORDER))
 
     @property
     def model_runs(self) -> int:
-        return self.counters["model"]
+        return int(self.counters["model"])
+
+    @property
+    def input_tokens(self) -> int:
+        return int(self.counters["input_tokens"])
+
+    @property
+    def output_tokens(self) -> int:
+        return int(self.counters["output_tokens"])
+
+    @property
+    def model_cost(self) -> float:
+        return float(self.counters["model_cost"])
 
 
 def build_agent(
     *,
     fixtures: Mapping[str, Mapping[str, str]] = INCIDENT_FIXTURES,
     store: Store | None = None,
+    model_backend: str = "scripted",
+    openrouter_api_key: str | None = None,
+    openrouter_model_id: str = "openai/gpt-4o-mini",
 ) -> ProfiledSmolAgent:
-    counters = {name: 0 for name in (*TOOL_ORDER, "model")}
-    model = ScriptedTriageModel(counters)
+    counters = {
+        name: 0.0
+        for name in (*TOOL_ORDER, "model", "input_tokens", "output_tokens", "model_cost")
+    }
+    if model_backend == "scripted":
+        model: Model = ScriptedTriageModel(counters)
+        model_id = "toolvalue/scripted-triage"
+    elif model_backend == "openrouter":
+        if not openrouter_api_key:
+            raise ValueError("OPENROUTER_API_KEY is required for the OpenRouter backend")
+        model = OpenRouterTriageModel(
+            counters,
+            api_key=openrouter_api_key,
+            model_id=openrouter_model_id,
+        )
+        model_id = openrouter_model_id
+    else:
+        raise ValueError(f"Unsupported model backend: {model_backend}")
     upstream_agent = ToolCallingAgent(
         tools=[
             DeploymentSignalTool(fixtures, counters),
@@ -231,6 +337,7 @@ def build_agent(
             OnCallSignalTool(fixtures, counters),
         ],
         model=model,
+        instructions=TRIAGE_INSTRUCTIONS,
         max_steps=6,
         verbosity_level=-1,
     )
@@ -246,4 +353,9 @@ def build_agent(
     def triage(service: str) -> str:
         return str(upstream_agent.run(f"Triage service: {service}", reset=True))
 
-    return ProfiledSmolAgent(function=triage, counters=counters)
+    return ProfiledSmolAgent(
+        function=triage,
+        counters=counters,
+        model_backend=model_backend,
+        model_id=model_id,
+    )

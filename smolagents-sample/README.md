@@ -35,13 +35,79 @@ download, API key, nondeterminism, and model-as-judge scoring while preserving
 the real smolagents agent loop. ToolValue uses exact-match labels for
 `rollback`, `investigate`, or `healthy`.
 
-## Run locally
+## Run a real OpenRouter LLM experiment
+
+Install the sample, then place your key only in the current shell environment.
+Do not paste it into source code, a command-line flag, chat, or a report:
 
 ```bash
 cd smolagents-sample
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m smolagents_profiler
+
+read -s OPENROUTER_API_KEY
+export OPENROUTER_API_KEY
+```
+
+Run one incident first to limit spend:
+
+```bash
+.venv/bin/python -m smolagents_profiler \
+  --backend openrouter \
+  --model openai/gpt-4o-mini \
+  --limit 1 \
+  --json .toolvalue/openrouter-report.json \
+  --store .toolvalue/openrouter-profiles.db
+```
+
+`openai/gpt-4o-mini` was available through OpenRouter and advertised support
+for both `tools` and `tool_choice` when checked on August 24, 2026. You may set
+`OPENROUTER_MODEL` or pass another current tool-capable model with `--model`.
+OpenRouter documents its current catalog and tool support through the
+[`/api/v1/models`](https://openrouter.ai/api/v1/models) endpoint.
+
+The default OpenRouter limit is one case even if `--limit` is omitted. That one
+case creates five complete agent executions: one baseline plus four tool
+ablations. With one tool call per turn and a final-answer turn, expect up to 25
+paid LLM requests. Check the model's current pricing before increasing the
+limit.
+
+### Prove that an LLM actually ran
+
+The command must show all of the following:
+
+```text
+Model backend: openrouter (...)
+OpenRouter LLM calls:    greater than 0
+OpenRouter input tokens: greater than 0
+OpenRouter output tokens: greater than 0
+OpenRouter reported cost: ... credits
+Fixture tool executions: 4 observed / 4 expected (baselines only)
+Replay integrity: 100.0%
+```
+
+The JSON report repeats the backend, model ID, LLM call count, token counts,
+OpenRouter-reported cost, and underlying tool executions under `experiment`.
+This is the audit trail that distinguishes the live experiment from the
+scripted integration test. OpenRouter returns usage and cost data directly in
+each non-streaming response; ToolValue records each response's latency and
+reported cost at the `@model` boundary.
+
+After the run:
+
+```bash
+unset OPENROUTER_API_KEY
+```
+
+The key is never written to SQLite or JSON.
+
+## Run the deterministic local test
+
+```bash
+cd smolagents-sample
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m smolagents_profiler --backend scripted
 ```
 
 The command writes content-free artifacts to `.toolvalue/report.json` and

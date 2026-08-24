@@ -3,13 +3,33 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import smolagents
 from smolagents_profiler import INCIDENTS, build_agent
+from smolagents_profiler.agent import _openrouter_response_cost
 from toolvalue import SQLiteStore
 
 
 class SmolagentsIntegrationTests(unittest.TestCase):
+    def test_openrouter_cost_is_read_from_usage_metadata(self) -> None:
+        message = SimpleNamespace(raw=SimpleNamespace(usage=SimpleNamespace(cost=.0042)))
+        self.assertEqual(_openrouter_response_cost(message), .0042)
+
+    def test_openrouter_backend_requires_environment_key(self) -> None:
+        with self.assertRaisesRegex(ValueError, "OPENROUTER_API_KEY"):
+            build_agent(model_backend="openrouter")
+
+    def test_openrouter_backend_constructs_without_making_a_request(self) -> None:
+        agent = build_agent(
+            model_backend="openrouter",
+            openrouter_api_key="test-key-that-is-never-sent",
+            openrouter_model_id="openai/gpt-4o-mini",
+        )
+        self.assertEqual(agent.model_backend, "openrouter")
+        self.assertEqual(agent.model_id, "openai/gpt-4o-mini")
+        self.assertEqual(agent.model_runs, 0)
+
     def test_real_toolcalling_agent_is_profiled_without_reexecuting_tools(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             database = Path(directory) / "profiles.db"
