@@ -37,17 +37,23 @@ the real smolagents agent loop. ToolValue uses exact-match labels for
 
 ## Run a real OpenRouter LLM experiment
 
-Install the sample, then place your key only in the current shell environment.
-Do not paste it into source code, a command-line flag, chat, or a report:
+Install the sample, then add your key to the local `.env` file. Do not paste it
+into source code, a command-line flag, chat, or a report:
 
 ```bash
 cd smolagents-sample
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-
-read -s OPENROUTER_API_KEY
-export OPENROUTER_API_KEY
 ```
+
+```dotenv
+# smolagents-sample/.env
+OPENROUTER_API_KEY=your-key-here
+OPENROUTER_MODEL=openai/gpt-4o-mini
+```
+
+The repository contains `.env.example`; the real `.env` is ignored by Git. A
+key already exported in the shell takes precedence over the file.
 
 Run one incident first to limit spend:
 
@@ -92,12 +98,6 @@ This is the audit trail that distinguishes the live experiment from the
 scripted integration test. OpenRouter returns usage and cost data directly in
 each non-streaming response; ToolValue records each response's latency and
 reported cost at the `@model` boundary.
-
-After the run:
-
-```bash
-unset OPENROUTER_API_KEY
-```
 
 The key is never written to SQLite or JSON.
 

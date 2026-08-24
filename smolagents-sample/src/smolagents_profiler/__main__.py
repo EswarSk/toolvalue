@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import smolagents
+from dotenv import load_dotenv
 from toolvalue import SQLiteStore, render_report
 
 from .agent import TOOL_ORDER, build_agent
@@ -50,6 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    project_env = Path(__file__).resolve().parents[2] / ".env"
+    load_dotenv(project_env, override=False)
     args = build_parser().parse_args(argv)
     limit = args.limit if args.limit is not None else (1 if args.backend == "openrouter" else len(INCIDENTS))
     if not 1 <= limit <= len(INCIDENTS):
