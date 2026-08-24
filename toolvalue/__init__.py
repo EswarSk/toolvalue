@@ -2,7 +2,7 @@
 
 from .analysis import aggregate, aggregate_by_metadata, render_report
 from .errors import ConfigurationError, ReplayDiverged, ToolValueError
-from .instrument import instrument_tool, middleware, tool
+from .instrument import instrument_tool, middleware, model, tool
 from .profiler import profile
 from .store import InMemoryStore, SQLiteStore
 from .types import (
@@ -34,6 +34,7 @@ __all__ = [
     "aggregate_by_metadata",
     "instrument_tool",
     "middleware",
+    "model",
     "profile",
     "render_report",
     "tool",

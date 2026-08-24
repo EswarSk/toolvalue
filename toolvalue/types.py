@@ -37,6 +37,7 @@ class ToolInvocation:
     cost: float
     duration_ms: float
     status: Literal["success", "failure", "unavailable"]
+    kind: Literal["tool", "model"] = "tool"
     error: str | None = None
     replayed: bool = False
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from toolvalue import EvalCase, SQLiteStore, ToolUnavailable, middleware, profile, tool
+from toolvalue import EvalCase, SQLiteStore, ToolUnavailable, middleware, model, profile, tool
 
 
 class AsyncProfilerTests(unittest.IsolatedAsyncioTestCase):
@@ -130,6 +130,49 @@ class AsyncProfilerTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SyncProfilerTests(unittest.TestCase):
+    def test_model_reruns_while_external_tools_only_run_in_baseline(self) -> None:
+        calls = {"metadata": 0, "readme": 0, "decision": 0}
+
+        @tool
+        def metadata(_: str) -> str:
+            calls["metadata"] += 1
+            return "python"
+
+        @tool
+        def readme(_: str) -> str:
+            calls["readme"] += 1
+            return "a web framework"
+
+        @model(cost=.003)
+        def decide(language: object, description: object) -> str:
+            calls["decision"] += 1
+            if isinstance(description, ToolUnavailable):
+                return "unknown"
+            return "web_framework"
+
+        @profile(task="rerunnable_model", scorer=lambda output, expected: float(output == expected))
+        def agent(repository: str) -> str:
+            return decide(metadata(repository), readme(repository))
+
+        result = agent.profile_case("example/repo", expected="web_framework")
+
+        self.assertEqual(calls, {"metadata": 1, "readme": 1, "decision": 3})
+        self.assertEqual(
+            {item.ablated_unit for item in result.counterfactuals},
+            {"metadata", "readme"},
+        )
+        self.assertEqual(result.baseline.cost, .003)
+        self.assertEqual(
+            [item.kind for item in result.baseline.invocations],
+            ["tool", "tool", "model"],
+        )
+        self.assertTrue(
+            all(
+                any(invocation.kind == "model" and not invocation.replayed for invocation in counter.invocations)
+                for counter in result.counterfactuals
+            )
+        )
+
     def test_sync_function_and_registry_middleware(self) -> None:
         wrapped = middleware().wrap("directory", lambda name: {"name": name}, cost=.001)
 

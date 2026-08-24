@@ -35,6 +35,7 @@ def _record(
     cost: float,
     duration_ms: float,
     status: Literal["success", "failure", "unavailable"],
+    kind: Literal["tool", "model"] = "tool",
     error: str | None = None,
     replayed: bool = False,
 ) -> None:
@@ -55,6 +56,7 @@ def _record(
             cost=cost,
             duration_ms=duration_ms,
             status=status,
+            kind=kind,
             error=error,
             replayed=replayed,
         )
@@ -158,6 +160,127 @@ def tool(
             wrapper = sync_wrapper
 
         wrapper.__toolvalue_tool__ = {"name": tool_name, "group": tool_group, "cost": cost, "replay_policy": replay_policy}
+        return wrapper
+
+    if function is not None:
+        return decorate(function)
+    return decorate
+
+
+@overload
+def model(function: F, /) -> F: ...
+
+
+@overload
+def model(
+    function: None = None,
+    /,
+    *,
+    name: str | None = None,
+    cost: Cost = 0.0,
+) -> Callable[[F], F]: ...
+
+
+def model(
+    function: F | None = None,
+    /,
+    *,
+    name: str | None = None,
+    cost: Cost = 0.0,
+) -> F | Callable[[F], F]:
+    """Instrument a reasoning boundary that reruns during counterfactual replay.
+
+    External evidence belongs behind ``@tool`` and is frozen after the baseline.
+    A model or deterministic decision function belongs behind ``@model`` so it
+    can respond to each ablated evidence set while its latency and cost remain
+    observable.
+    """
+
+    def decorate(func: F) -> F:
+        model_name = name or func.__name__
+
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+                context = current_context()
+                if context is None:
+                    return await func(*args, **kwargs)
+                key = invocation_key(model_name, args, kwargs)
+                started = time.perf_counter()
+                try:
+                    result = await func(*args, **kwargs)
+                except Exception as exc:
+                    _record(
+                        tool_name=model_name,
+                        group=model_name,
+                        key=key,
+                        args=args,
+                        kwargs=kwargs,
+                        result=None,
+                        cost=0.0,
+                        duration_ms=(time.perf_counter() - started) * 1000,
+                        status="failure",
+                        kind="model",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                    raise
+                _record(
+                    tool_name=model_name,
+                    group=model_name,
+                    key=key,
+                    args=args,
+                    kwargs=kwargs,
+                    result=result,
+                    cost=_resolve_cost(cost, result),
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    status="success",
+                    kind="model",
+                )
+                return result
+
+            wrapper: Any = async_wrapper
+        else:
+            @wraps(func)
+            def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+                context = current_context()
+                if context is None:
+                    return func(*args, **kwargs)
+                key = invocation_key(model_name, args, kwargs)
+                started = time.perf_counter()
+                try:
+                    result = func(*args, **kwargs)
+                except Exception as exc:
+                    _record(
+                        tool_name=model_name,
+                        group=model_name,
+                        key=key,
+                        args=args,
+                        kwargs=kwargs,
+                        result=None,
+                        cost=0.0,
+                        duration_ms=(time.perf_counter() - started) * 1000,
+                        status="failure",
+                        kind="model",
+                        error=f"{type(exc).__name__}: {exc}",
+                    )
+                    raise
+                _record(
+                    tool_name=model_name,
+                    group=model_name,
+                    key=key,
+                    args=args,
+                    kwargs=kwargs,
+                    result=result,
+                    cost=_resolve_cost(cost, result),
+                    duration_ms=(time.perf_counter() - started) * 1000,
+                    status="success",
+                    kind="model",
+                )
+                return result
+
+            wrapper = sync_wrapper
+
+        wrapper.__toolvalue_model__ = {"name": model_name, "cost": cost, "replay_policy": "rerun"}
         return wrapper
 
     if function is not None:

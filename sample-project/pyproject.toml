@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toolvalue-live-github-sample"
+version = "0.1.0"
+description = "Standalone end-to-end sample for profiling tools against live GitHub data"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+profile-live-repos = "live_repo_profiler.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/live_repo_profiler"]

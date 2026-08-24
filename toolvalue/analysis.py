@@ -35,6 +35,8 @@ def aggregate(
         unit_costs: dict[str, float] = defaultdict(float)
         unit_latencies: dict[str, float] = defaultdict(float)
         for invocation in profile.baseline.invocations:
+            if invocation.kind != "tool":
+                continue
             unit_costs[invocation.group] += invocation.cost
             unit_latencies[invocation.group] += invocation.duration_ms
         for unit, value in unit_costs.items():

@@ -1,78 +1,87 @@
 # ToolValue
 
-ToolValue is a small Python library that answers one question production traces cannot:
+> Prototype: leave-one-tool-out value profiling for Python agents.
 
-> Which agent tools materially improve output quality relative to their cost?
+ToolValue answers a question ordinary production traces cannot:
 
-It wraps an existing agent function, records its tool results, freezes that evidence, replays the same function with one tool removed at a time, and aggregates the resulting score deltas.
+> Which tools materially improve an agent's output relative to their cost and latency?
+
+Add annotations to an existing Python agent. ToolValue records one baseline,
+freezes external tool results, reruns the decision step with one tool removed at
+a time, and measures the score difference using your evaluator.
 
 ```python
-from toolvalue import EvalCase, ToolUnavailable, profile, tool
+from toolvalue import ToolUnavailable, model, profile, tool
 
-@tool(cost=0.002, group="web")
-async def homepage(business):
-    return await browser.fetch(business.url)
+@tool(cost=0.002)
+def search_company(name: str) -> dict:
+    return search_api.lookup(name)
 
-@tool(cost=0.007, group="reviews")
-async def reviews(business):
-    return await directory.reviews(business.name)
+@model(cost=0.003)
+def decide(evidence: object) -> str:
+    if isinstance(evidence, ToolUnavailable):
+        return "unknown"
+    return classifier(evidence)
 
-def accuracy(result, expected):
-    return 1.0 if result["industry"] == expected else 0.0
+def accuracy(output: str, expected: str) -> float:
+    return float(output == expected)
 
-@profile(task="industry_classification", scorer=accuracy)
-async def enrich(business):
-    home = await homepage(business)
-    review_data = await reviews(business)
-
-    if not isinstance(home, ToolUnavailable):
-        return classify(home)
-    return classify(review_data)
+@profile(task="company_classification", scorer=accuracy)
+def classify_company(name: str) -> str:
+    return decide(search_company(name))
 ```
 
 The decorated function still behaves normally:
 
 ```python
-result = await enrich(business)
+result = classify_company("Acme")
 ```
 
-Profile one golden case:
+Profiling is an additional method on that function:
 
 ```python
-case = await enrich.profile_case(
-    business,
-    expected={"industry": "Plumbing"},
-    metadata={"segment": "trades"},
-)
+case = classify_company.profile_case("Acme", expected="manufacturing")
+print(case.counterfactuals[0].delta)
 ```
 
-Or evaluate a dataset:
+`@model` means “rerun this decision boundary during a counterfactual.” It can
+wrap an LLM call, a traditional model, rules, or any deterministic function. No
+AI is required by the profiler.
 
-```python
-report = await enrich.evaluate([
-    EvalCase(args=(business,), expected=label, metadata={"segment": segment})
-    for business, label, segment in dataset
-])
+## How it works
 
-for tool in report.tools:
-    print(tool.unit, tool.mean_quality_delta, tool.avg_cost)
+```mermaid
+sequenceDiagram
+    participant App
+    participant Profiler as ToolValue
+    participant Tools as External tools
+    participant Decision as Decision boundary
+    participant Scorer
+
+    App->>Profiler: profile_case(input, expected)
+    Profiler->>Tools: Run baseline tool calls once
+    Tools-->>Profiler: Record and freeze results
+    Profiler->>Decision: Run with all evidence
+    Decision-->>Profiler: Baseline output
+    loop Once per tool or group
+        Profiler->>Decision: Rerun with one tool unavailable
+        Note over Profiler,Decision: Other tool results replay from the baseline
+        Decision-->>Profiler: Counterfactual output
+    end
+    Profiler->>Scorer: Score baseline and counterfactual outputs
+    Scorer-->>Profiler: Quality deltas by tool
 ```
 
-Segment using dimensions supplied by the application rather than inventing them:
+The boundaries have deliberately different behavior:
 
-```python
-from toolvalue import aggregate_by_metadata
+| Annotation | Use it for | Counterfactual behavior |
+|---|---|---|
+| `@profile` | The agent/task entry point | Coordinates baselines, replays, scoring, and storage |
+| `@tool` | External evidence or side effects | Replays the frozen baseline result or returns `ToolUnavailable` |
+| `@model` | Reasoning or decision logic | Executes again with the counterfactual evidence |
 
-by_segment = aggregate_by_metadata(report.profiles, "segment")
-restaurant_reviews = next(
-    tool for tool in by_segment["restaurant"].tools
-    if tool.unit == "reviews"
-)
-```
-
-## Why the tool boundary is still required
-
-`@profile(...)` is the task integration. Counterfactual replay also needs visibility into external evidence. Add `@tool(...)` to direct functions, or wrap functions from a centralized registry:
+For centralized tool registries, use the middleware adapter instead of editing
+each function:
 
 ```python
 from toolvalue import middleware
@@ -84,61 +93,141 @@ registry["search"] = middleware().wrap(
 )
 ```
 
-A task decorator alone cannot safely replay data it never observed. ToolValue deliberately does not own the agent runtime, model provider, or tool registry.
+## Install
+
+ToolValue is currently a source-distributed prototype:
+
+```bash
+git clone https://github.com/EswarSk/toolvalue.git
+cd toolvalue
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+Run the bundled fixture demo:
+
+```bash
+.venv/bin/toolvalue demo --json .toolvalue/report.json
+.venv/bin/toolvalue analyze .toolvalue/report.json
+```
+
+## Evaluate a dataset
+
+The application owns the scorer and labeled evaluation cases. ToolValue does
+not invent a quality score or require an AI judge.
+
+```python
+from toolvalue import EvalCase
+
+report = classify_company.evaluate([
+    EvalCase(
+        args=(company_name,),
+        expected=expected_industry,
+        metadata={"segment": segment},
+    )
+    for company_name, expected_industry, segment in dataset
+])
+
+for item in report.tools:
+    print(item.unit, item.mean_quality_delta, item.avg_latency_ms, item.avg_cost)
+```
+
+Scorers may return a single number or named components with an `overall` value.
+Results can be segmented only by metadata supplied by the application:
+
+```python
+from toolvalue import aggregate_by_metadata
+
+reports_by_segment = aggregate_by_metadata(report.profiles, "segment")
+```
+
+## Reproducible public GitHub example
+
+The separate [live GitHub sample](sample-project/README.md) uses four real,
+read-only public API calls per repository and a transparent deterministic
+classifier. No GitHub token or paid model is required.
+
+Observed on August 24, 2026 across six labeled repositories:
+
+| Result | Observed value |
+|---|---:|
+| Correct classifications | 6 / 6 |
+| Baseline quality | 99.6% |
+| Replay integrity | 100% |
+| Baseline network requests | 24 / 24 expected |
+| Counterfactual network requests | 0 |
+| Decision runs | 30 / 30 expected |
+
+| Evidence tool | Mean quality delta | Useful rate | Mean latency |
+|---|---:|---:|---:|
+| Repository metadata | +3.10% | 100% | 373 ms |
+| README | +3.03% | 100% | 337 ms |
+| Topics | +2.73% | 100% | 384 ms |
+| Languages | 0.00% | 0% | 280 ms |
+
+The example therefore identifies language breakdown as a conditional-skip
+candidate for this task: it added latency without changing the measured score.
+Public repository contents and API latency can change, so reruns may differ.
+
+```bash
+cd sample-project
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+env -u GITHUB_TOKEN .venv/bin/python -m live_repo_profiler --limit 6
+```
 
 ## Strict replay
 
-Counterfactual runs never access new external data. A baseline call is keyed by tool name and normalized arguments. During replay:
+Counterfactual runs never fetch new external evidence:
 
-- matching calls return a frozen copy of the recorded result;
+- matching calls return a frozen copy of their recorded result;
 - the ablated tool returns `ToolUnavailable(reason="counterfactual_ablation")`;
-- an unseen non-ablated call marks that counterfactual `diverged`;
-- `replay_policy="never"` prevents side-effecting tools from being replayed.
+- an unseen, non-ablated call marks the counterfactual as diverged;
+- `replay_policy="never"` prevents side-effecting tools from being replayed;
+- repeated calls are matched by normalized arguments and occurrence order;
+- tools sharing a `group` can be ablated together.
 
-This preserves experimental integrity while allowing the agent to reason again after evidence is removed.
+This avoids confusing live-data drift with tool value.
 
-## Install and run the demo
+## Storage and privacy
 
-```bash
-python -m pip install -e .
-toolvalue demo --json .toolvalue/report.json
-```
-
-The bundled business-enrichment agent demonstrates segment-dependent value: reviews matter for restaurants, registry and escalation matter for brand/legal mismatches, and reviews are mostly waste for professional services.
-
-```bash
-toolvalue analyze .toolvalue/report.json
-```
-
-## Data and privacy
-
-The in-process replay needs a transient copy of tool results. `SQLiteStore` persists metadata and hashes by default, not raw arguments, outputs, or expected labels:
+In-process counterfactual replay temporarily needs tool results. The
+`SQLiteStore` persists metadata and hashes by default—not raw arguments,
+outputs, tool results, or expected labels:
 
 ```python
 from toolvalue import SQLiteStore
 
 store = SQLiteStore(".toolvalue/profiles.db")
 
-@profile(task="industry", scorer=accuracy, store=store)
-async def enrich(...):
+@profile(task="company_classification", scorer=accuracy, store=store)
+def classify_company(...):
     ...
 ```
 
-Pass `capture_content=True` to the store only when local raw-content persistence is appropriate.
+Raw content persistence is opt-in with `SQLiteStore(..., capture_content=True)`.
 
-## Scope of v0.1
+## Prototype scope
 
 Implemented:
 
-- sync and async `@profile` task boundaries;
-- sync and async `@tool` recording;
-- frozen result replay with normalized argument hashing;
-- standardized ablation sentinel;
-- strict divergence detection;
-- developer-defined deterministic or async scorers;
-- leave-one-tool/group-out experiments;
-- quality, cost, latency, useful-rate, harmful-rate, divergence, confidence interval, and value-per-dollar aggregation;
+- synchronous and asynchronous `@profile`, `@tool`, and `@model` boundaries;
+- frozen result replay and standardized unavailable-tool sentinels;
+- strict divergence detection and grouped ablations;
+- deterministic or asynchronous application-defined scorers;
+- quality, cost, latency, useful-rate, harmful-rate, divergence, confidence
+  interval, and value-per-dollar aggregation;
 - in-memory and SQLite metadata stores;
-- CLI report and an executable business-enrichment demo.
+- an executable fixture demo and a separate live public-API sample.
 
-This is explicitly **leave-one-out counterfactual value**, not perfect causal attribution. Redundant and interacting tools require pairwise or Shapley-style analysis in a future version.
+This is leave-one-out counterfactual value, not complete causal attribution.
+Redundant and interacting tools can require pairwise ablations or Shapley-style
+analysis. The output is an optimization signal, not an automatic deletion
+decision.
+
+## Verify
+
+```bash
+python3 -m unittest discover -s tests -v
+PYTHONPATH=sample-project/src:. python3 -m unittest discover -s sample-project/tests -v
+```

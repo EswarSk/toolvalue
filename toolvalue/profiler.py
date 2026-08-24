@@ -80,7 +80,13 @@ def _run_id(prefix: str) -> str:
 
 
 def _units(run: RunRecord, requested: Iterable[str] | None) -> list[str]:
-    available = list(dict.fromkeys(invocation.group for invocation in run.invocations))
+    available = list(
+        dict.fromkeys(
+            invocation.group
+            for invocation in run.invocations
+            if invocation.kind == "tool"
+        )
+    )
     if requested is None:
         return available
     selected = list(dict.fromkeys(requested))
