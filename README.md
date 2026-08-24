@@ -232,6 +232,14 @@ The [integration instructions](smolagents-sample/README.md) explain the expected
 request count and how to verify LLM calls, token usage, reported cost, and
 replay integrity.
 
+For a held-out evaluation whose scenarios and labels are not selected in
+advance, use `--blind-cases`. Signals and oracle labels are revealed only after
+the complete run, and the generated seed makes the result reproducible:
+
+```bash
+.venv/bin/python -m smolagents_profiler --backend openrouter --blind-cases 5
+```
+
 ## Strict replay
 
 Counterfactual runs never fetch new external evidence:

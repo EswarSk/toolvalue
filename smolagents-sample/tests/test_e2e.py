@@ -6,12 +6,30 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import smolagents
-from smolagents_profiler import INCIDENTS, build_agent
+from smolagents_profiler import INCIDENTS, build_agent, generate_blind_evaluation, incident_oracle
 from smolagents_profiler.agent import _openrouter_response_cost
 from toolvalue import SQLiteStore
 
 
 class SmolagentsIntegrationTests(unittest.TestCase):
+    def test_blind_scenarios_are_unique_oracle_labeled_and_not_in_agent_input(self) -> None:
+        evaluation = generate_blind_evaluation(5, seed=20260824)
+        signal_combinations = {
+            (item["deployment"], item["telemetry"], item["runbook"])
+            for item in evaluation.reveal
+        }
+        self.assertEqual(len(signal_combinations), 5)
+        for case, scenario in zip(evaluation.cases, evaluation.reveal):
+            service = case.args[0]
+            self.assertEqual(case.args, (scenario["service"],))
+            self.assertNotIn("expected", case.metadata)
+            self.assertEqual(case.expected, incident_oracle(evaluation.fixtures[service]))
+
+        agent = build_agent(fixtures=evaluation.fixtures)
+        report = agent.evaluate(evaluation.cases[:3])
+        self.assertEqual(report.baseline_quality, 1.0)
+        self.assertEqual(agent.external_tool_calls, 12)
+
     def test_openrouter_cost_is_read_from_usage_metadata(self) -> None:
         message = SimpleNamespace(raw=SimpleNamespace(usage=SimpleNamespace(cost=.0042)))
         self.assertEqual(_openrouter_response_cost(message), .0042)

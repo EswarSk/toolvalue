@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from toolvalue import SQLiteStore, render_report
 
 from .agent import TOOL_ORDER, build_agent
+from .blind import BlindEvaluation, generate_blind_evaluation
 from .dataset import INCIDENTS
 
 
@@ -36,6 +37,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="number of incidents; defaults to all scripted cases or one OpenRouter case",
     )
     parser.add_argument(
+        "--blind-cases",
+        type=int,
+        help="generate 1-8 random held-out scenarios and reveal them only after the run",
+    )
+    parser.add_argument(
+        "--blind-seed",
+        type=int,
+        help="optional reproduction seed for --blind-cases",
+    )
+    parser.add_argument(
         "--store",
         type=Path,
         default=Path(".toolvalue/profiles.db"),
@@ -54,10 +65,28 @@ def main(argv: list[str] | None = None) -> int:
     project_env = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(project_env, override=False)
     args = build_parser().parse_args(argv)
-    limit = args.limit if args.limit is not None else (1 if args.backend == "openrouter" else len(INCIDENTS))
-    if not 1 <= limit <= len(INCIDENTS):
-        print(f"--limit must be between 1 and {len(INCIDENTS)}", file=sys.stderr)
+    if args.blind_cases is not None and args.limit is not None:
+        print("Use either --blind-cases or --limit, not both", file=sys.stderr)
         return 2
+    blind_evaluation: BlindEvaluation | None = None
+    if args.blind_cases is not None:
+        try:
+            blind_evaluation = generate_blind_evaluation(
+                args.blind_cases,
+                seed=args.blind_seed,
+            )
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        cases = blind_evaluation.cases
+        fixtures = blind_evaluation.fixtures
+    else:
+        limit = args.limit if args.limit is not None else (1 if args.backend == "openrouter" else len(INCIDENTS))
+        if not 1 <= limit <= len(INCIDENTS):
+            print(f"--limit must be between 1 and {len(INCIDENTS)}", file=sys.stderr)
+            return 2
+        cases = INCIDENTS[:limit]
+        fixtures = None
     api_key = os.getenv("OPENROUTER_API_KEY") if args.backend == "openrouter" else None
     if args.backend == "openrouter" and not api_key:
         print(
@@ -65,13 +94,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    cases = INCIDENTS[:limit]
     with SQLiteStore(args.store) as store:
+        agent_options = {
+            "store": store,
+            "model_backend": args.backend,
+            "openrouter_api_key": api_key,
+            "openrouter_model_id": args.model,
+        }
+        if fixtures is not None:
+            agent_options["fixtures"] = fixtures
         agent = build_agent(
-            store=store,
-            model_backend=args.backend,
-            openrouter_api_key=api_key,
-            openrouter_model_id=args.model,
+            **agent_options,
         )
         report = agent.evaluate(cases)
 
@@ -90,6 +123,21 @@ def main(argv: list[str] | None = None) -> int:
             f"expected={case.expected:<12} "
             f"score={case_profile.baseline.score:.0%}"
         )
+    if blind_evaluation is not None:
+        print(f"\nBlind scenario reveal (seed={blind_evaluation.seed})")
+        predictions = {
+            case.args[0]: profile.baseline.output
+            for case, profile in zip(cases, report.profiles)
+        }
+        for scenario in blind_evaluation.reveal:
+            service = str(scenario["service"])
+            print(
+                f"  {scenario['index']}: {service} "
+                f"deployment={scenario['deployment']} "
+                f"telemetry={scenario['telemetry']} "
+                f"runbook={scenario['runbook']} "
+                f"predicted={predictions[service]} expected={scenario['expected']}"
+            )
     print(
         f"\nFixture tool executions: {agent.external_tool_calls} observed / "
         f"{expected_tool_calls} expected (baselines only)"
@@ -115,7 +163,11 @@ def main(argv: list[str] | None = None) -> int:
         "output_tokens": agent.output_tokens,
         "openrouter_reported_cost": agent.model_cost,
         "underlying_tool_executions": agent.external_tool_calls,
+        "blind_evaluation": blind_evaluation is not None,
     }
+    if blind_evaluation is not None:
+        payload["experiment"]["blind_seed"] = blind_evaluation.seed
+        payload["experiment"]["blind_scenarios"] = blind_evaluation.reveal
     args.json.write_text(
         json.dumps(payload, indent=2) + "\n",
         encoding="utf-8",

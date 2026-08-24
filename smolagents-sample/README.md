@@ -101,6 +101,52 @@ reported cost at the `@model` boundary.
 
 The key is never written to SQLite or JSON.
 
+## Run blind scenarios
+
+The fixed incident cases are useful for regression tests but should not be the
+only evidence. Blind mode randomly samples unique signal combinations, assigns
+opaque service IDs, and computes labels with an independent deterministic
+oracle. Only the service ID is passed into the agent. The CLI withholds the
+signals and expected labels until the complete profile finishes, then records
+the random seed so the run can be reproduced:
+
+```bash
+.venv/bin/python -m smolagents_profiler \
+  --backend openrouter \
+  --blind-cases 5 \
+  --json .toolvalue/blind-openrouter-report.json \
+  --store .toolvalue/blind-openrouter-profiles.db
+```
+
+Use `--blind-seed <number>` only when reproducing an earlier run. Omitting it
+creates a new unpredictable seed.
+
+### What the first blind run exposed
+
+The first five-case blind run used seed `7906770189683002919`. It was not a
+clean attribution run, and the CLI correctly exited nonzero:
+
+| Check | Observed |
+|---|---:|
+| Baseline accuracy | 4 / 5 (80%) |
+| Replay integrity | 100% |
+| Expected baseline tool executions | 20 |
+| Actual baseline tool executions | 23 |
+| OpenRouter LLM calls | 137 |
+| Input / output tokens | 208,485 / 12,000 |
+| OpenRouter-reported cost | 0.028230 credits |
+
+The LLM duplicated three baseline tool calls in the failed case. During many
+ablations it repeatedly retried the unavailable tool until the smolagents step
+limit. Consequently, even the deliberately irrelevant on-call lookup appeared
+valuable in three cases. Those percentages must not be interpreted as clean
+evidence attribution: they measure the combined effect of missing evidence and
+the agent's poor recovery behavior.
+
+This is a useful profiler finding in its own right. A production evaluation
+must report execution-policy violations and retry costs alongside quality
+deltas, and it should not automatically remove a tool from one blind run.
+
 ## Run the deterministic local test
 
 ```bash
