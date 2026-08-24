@@ -6,8 +6,10 @@ const geistSans = Geist({ variable: '--font-geist-sans', subsets: ['latin'] });
 const geistMono = Geist_Mono({ variable: '--font-geist-mono', subsets: ['latin'] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://toolvalue-profiler.skeswar2.chatgpt.site'),
   title: 'ToolValue — Agent Tool Value Profiler',
   description: 'Know which agent tools improve quality, and which only add cost.',
+  alternates: { canonical: '/' },
   openGraph: {
     title: 'ToolValue — Agent Tool Value Profiler',
     description: 'Know which agent tools improve quality, and which only add cost.',
