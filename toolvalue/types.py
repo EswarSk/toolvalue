@@ -23,6 +23,10 @@ class ToolUnavailable:
     def __bool__(self) -> bool:
         return False
 
+    def __str__(self) -> str:
+        name = self.tool_name or "requested tool"
+        return f"TOOL_UNAVAILABLE: {name} is deliberately unavailable; do not retry it"
+
 
 @dataclass
 class ToolInvocation:
@@ -60,6 +64,8 @@ class RunRecord:
     invocations: list[ToolInvocation]
     duration_ms: float
     metadata: dict[str, Any]
+    valid: bool = True
+    invalid_reason: str | None = None
     started_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     @property
@@ -78,6 +84,8 @@ class RunRecord:
             "duration_ms": self.duration_ms,
             "cost": self.cost,
             "metadata": json_safe(self.metadata),
+            "valid": self.valid,
+            "invalid_reason": self.invalid_reason,
             "started_at": self.started_at,
         }
 
@@ -91,11 +99,12 @@ class CounterfactualRun:
     baseline_score: float
     counterfactual_score: float | None
     delta: float | None
-    status: Literal["complete", "diverged", "failed"]
+    status: Literal["complete", "invalid", "diverged", "failed"]
     invocations: list[ToolInvocation]
     duration_ms: float
     reason: str | None = None
     score_components: dict[str, float] = field(default_factory=dict)
+    trial: int = 1
 
     def to_dict(self, *, include_content: bool = True) -> dict[str, Any]:
         data = dataclasses.asdict(self)
@@ -132,16 +141,36 @@ class EvalCase:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class RunValidationContext:
+    phase: Literal["baseline", "counterfactual"]
+    output: Any
+    score: float
+    score_components: dict[str, float]
+    invocations: list[ToolInvocation]
+    expected: Any
+    metadata: dict[str, Any]
+    ablated_unit: str | None = None
+    baseline_score: float | None = None
+
+
 @dataclass
 class ToolAggregate:
     unit: str
+    attempts: int
     runs: int
-    mean_quality_delta: float
-    median_quality_delta: float
-    positive_rate: float
-    zero_value_rate: float
-    harmful_rate: float
+    independent_cases: int
+    mean_quality_delta: float | None
+    median_quality_delta: float | None
+    positive_rate: float | None
+    zero_value_rate: float | None
+    harmful_rate: float | None
     divergence_rate: float
+    recovery_failure_rate: float
+    attribution_coverage: float
+    attribution_reliable: bool
+    avg_model_call_overhead: float
+    avg_model_cost_overhead: float
     avg_cost: float
     avg_latency_ms: float
     value_per_dollar: float | None
@@ -156,10 +185,13 @@ class ToolAggregate:
 class ProfileReport:
     task: str
     cases: int
+    eligible_cases: int
     baseline_quality: float
+    baseline_eligibility: float
     average_cost: float
     average_latency_ms: float
     replay_integrity: float
+    attribution_coverage: float
     tools: list[ToolAggregate]
     profiles: list[CaseProfile] = field(default_factory=list, repr=False)
 
@@ -167,10 +199,13 @@ class ProfileReport:
         data = {
             "task": self.task,
             "cases": self.cases,
+            "eligible_cases": self.eligible_cases,
             "baseline_quality": self.baseline_quality,
+            "baseline_eligibility": self.baseline_eligibility,
             "average_cost": self.average_cost,
             "average_latency_ms": self.average_latency_ms,
             "replay_integrity": self.replay_integrity,
+            "attribution_coverage": self.attribution_coverage,
             "tools": [tool.to_dict() for tool in self.tools],
         }
         if include_profiles:

@@ -44,6 +44,29 @@ case = classify_company.profile_case("Acme", expected="manufacturing")
 print(case.counterfactuals[0].delta)
 ```
 
+Framework adapters can also validate that an execution is eligible for
+attribution. A validator returns a reason string for an invalid run, or `None`
+for a valid run:
+
+```python
+from toolvalue import RunValidationContext
+
+def valid_run(context: RunValidationContext) -> str | None:
+    if context.output.state != "success":
+        return f"agent_termination:{context.output.state}"
+    if context.phase == "baseline" and context.score < 1.0:
+        return "incorrect_baseline"
+    return None
+
+@profile(task="company_classification", scorer=accuracy, validator=valid_run)
+def classify_company(name: str):
+    ...
+```
+
+Invalid baselines are retained for operational reporting but do not launch
+counterfactuals. Invalid counterfactuals—such as max-step fallbacks or tool
+retry loops—are excluded from quality deltas and reported as recovery failures.
+
 `@model` means “rerun this decision boundary during a counterfactual.” It can
 wrap an LLM call, a traditional model, rules, or any deterministic function. No
 AI is required by the profiler.
@@ -126,11 +149,17 @@ report = classify_company.evaluate([
         metadata={"segment": segment},
     )
     for company_name, expected_industry, segment in dataset
-])
+], trials=3)
 
 for item in report.tools:
     print(item.unit, item.mean_quality_delta, item.avg_latency_ms, item.avg_cost)
 ```
+
+`trials` repeats only the model-side counterfactual: frozen external tool
+results are still not fetched again. Repetition exposes real-LLM variance.
+ToolValue marks an estimate reliable only when at least 80% of attempts are
+valid and the evidence spans at least two independent cases. Raw observations
+remain available even when the rendered report says `insufficient`.
 
 Scorers may return a single number or named components with an `overall` value.
 Results can be segmented only by metadata supplied by the application:
@@ -234,10 +263,12 @@ replay integrity.
 
 For a held-out evaluation whose scenarios and labels are not selected in
 advance, use `--blind-cases`. Signals and oracle labels are revealed only after
-the complete run, and the generated seed makes the result reproducible:
+the complete run, and the generated seed makes the result reproducible. Use
+three or more trials when measuring a real LLM:
 
 ```bash
-.venv/bin/python -m smolagents_profiler --backend openrouter --blind-cases 5
+.venv/bin/python -m smolagents_profiler \
+  --backend openrouter --blind-cases 5 --trials 3
 ```
 
 ## Strict replay
@@ -278,6 +309,9 @@ Implemented:
 - synchronous and asynchronous `@profile`, `@tool`, and `@model` boundaries;
 - frozen result replay and standardized unavailable-tool sentinels;
 - strict divergence detection and grouped ablations;
+- application-defined run validators and invalid-baseline gating;
+- explicit invalid recovery, attribution coverage, and model retry overhead;
+- repeated model-side counterfactual trials with evidence sufficiency guards;
 - deterministic or asynchronous application-defined scorers;
 - quality, cost, latency, useful-rate, harmful-rate, divergence, confidence
   interval, and value-per-dollar aggregation;
@@ -287,8 +321,10 @@ Implemented:
 
 This is leave-one-out counterfactual value, not complete causal attribution.
 Redundant and interacting tools can require pairwise ablations or Shapley-style
-analysis. The output is an optimization signal, not an automatic deletion
-decision.
+analysis. With an LLM decision boundary, a valid delta can also include model
+sensitivity to the missing-tool marker; repeated controlled trials are needed
+before treating it as semantic evidence value. The output is an optimization
+signal, not an automatic deletion decision.
 
 ## Verify
 

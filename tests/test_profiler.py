@@ -184,6 +184,69 @@ class SyncProfilerTests(unittest.TestCase):
         result = agent.profile_case("Acme", expected="Acme")
         self.assertEqual(result.counterfactuals[0].delta, 1.0)
 
+    def test_invalid_baseline_is_ineligible_and_skips_counterfactuals(self) -> None:
+        calls = {"lookup": 0}
+
+        @tool
+        def lookup(value: str) -> str:
+            calls["lookup"] += 1
+            return value
+
+        @profile(
+            task="invalid_baseline",
+            scorer=lambda output, expected: float(output == expected),
+            validator=lambda context: "baseline_policy_failed" if context.phase == "baseline" else None,
+        )
+        def agent(value: str) -> str:
+            return lookup(value)
+
+        report = agent.evaluate([EvalCase(args=("correct",), expected="correct")])
+
+        self.assertEqual(calls["lookup"], 1)
+        self.assertFalse(report.profiles[0].baseline.valid)
+        self.assertEqual(report.profiles[0].baseline.invalid_reason, "baseline_policy_failed")
+        self.assertEqual(report.profiles[0].counterfactuals, [])
+        self.assertEqual(report.eligible_cases, 0)
+        self.assertEqual(report.baseline_eligibility, 0.0)
+        self.assertEqual(report.attribution_coverage, 0.0)
+
+    def test_invalid_recovery_is_excluded_from_delta_and_reports_model_overhead(self) -> None:
+        @tool
+        def evidence(_: str) -> str:
+            return "signal"
+
+        @model
+        def decide(value: object) -> str:
+            return "unknown" if isinstance(value, ToolUnavailable) else "correct"
+
+        @profile(
+            task="invalid_recovery",
+            scorer=lambda output, expected: float(output == expected),
+            validator=lambda context: "retry_policy_failed" if context.phase == "counterfactual" else None,
+        )
+        def agent(value: str) -> str:
+            observation = evidence(value)
+            first = decide(observation)
+            if isinstance(observation, ToolUnavailable):
+                decide(observation)
+            return first
+
+        report = agent.evaluate([EvalCase(args=("case",), expected="correct")], trials=3)
+        counterfactual = report.profiles[0].counterfactuals[0]
+        aggregate = report.tools[0]
+
+        self.assertEqual([item.trial for item in report.profiles[0].counterfactuals], [1, 2, 3])
+        self.assertEqual(counterfactual.status, "invalid")
+        self.assertEqual(counterfactual.reason, "retry_policy_failed")
+        self.assertIsNone(counterfactual.delta)
+        self.assertEqual(aggregate.attempts, 3)
+        self.assertEqual(aggregate.runs, 0)
+        self.assertIsNone(aggregate.mean_quality_delta)
+        self.assertEqual(aggregate.recovery_failure_rate, 1.0)
+        self.assertEqual(aggregate.attribution_coverage, 0.0)
+        self.assertEqual(aggregate.avg_model_call_overhead, 1.0)
+        self.assertIsNone(aggregate.recommendation)
+
     def test_sqlite_store_defaults_to_metadata_only(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "profiles.db"

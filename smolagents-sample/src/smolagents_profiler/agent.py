@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from smolagents import ChatMessage, ChatMessageToolCall, MessageRole, Model, OpenAIModel, Tool, ToolCallingAgent
 from smolagents.models import ChatMessageToolCallFunction
-from toolvalue import EvalCase, ProfileReport, model as value_model
+from toolvalue import EvalCase, ProfileReport, RunValidationContext, model as value_model
 from toolvalue import profile, tool as value_tool
 from toolvalue.store import Store
 
@@ -30,13 +31,45 @@ final_answer using this policy:
 - investigate when exactly one of DEPLOYMENT_RISK=high or ERROR_STATE=spiking is present;
 - healthy otherwise.
 ToolUnavailable means that signal is missing. Do not infer a missing signal.
+When a tool returns TOOL_UNAVAILABLE, that attempt is complete: never call that tool again.
 The on-call identity never changes the classification.
 """.strip()
 
 
-def exact_match(output: str, expected: str) -> float:
+@dataclass(frozen=True)
+class AgentOutcome:
+    answer: str
+    state: str
+
+
+def exact_match(output: AgentOutcome | str, expected: str) -> float:
     """Independent, deterministic evaluation with no model-as-judge."""
-    return float(output == expected)
+    answer = output.answer if isinstance(output, AgentOutcome) else output
+    return float(answer == expected)
+
+
+def validate_triage_run(context: RunValidationContext) -> str | None:
+    """Reject outcomes that cannot support a controlled attribution claim."""
+    if not isinstance(context.output, AgentOutcome):
+        return "missing_agent_run_state"
+    if context.output.state != "success":
+        return f"agent_termination:{context.output.state}"
+
+    counts = Counter(
+        invocation.group
+        for invocation in context.invocations
+        if invocation.kind == "tool"
+    )
+    policy_errors = [
+        f"{name}={counts[name]}"
+        for name in TOOL_ORDER
+        if counts[name] != 1
+    ]
+    if policy_errors:
+        return f"tool_policy_violation:{','.join(policy_errors)}"
+    if context.phase == "baseline" and context.score < 1.0:
+        return f"baseline_quality_below_threshold:{context.score:.3f}"
+    return None
 
 
 def _openrouter_response_cost(message: ChatMessage) -> float:
@@ -268,19 +301,19 @@ class OnCallSignalTool(_FixtureTool):
 
 @dataclass
 class ProfiledSmolAgent:
-    function: Callable[..., str]
+    function: Callable[..., AgentOutcome]
     counters: dict[str, float]
     model_backend: str
     model_id: str
 
     def __call__(self, service: str) -> str:
-        return self.function(service)
+        return self.function(service).answer
 
     def profile_case(self, service: str, *, expected: str, metadata: dict[str, Any] | None = None):
         return self.function.profile_case(service, expected=expected, metadata=metadata)
 
-    def evaluate(self, cases: list[EvalCase]) -> ProfileReport:
-        return self.function.evaluate(cases)
+    def evaluate(self, cases: list[EvalCase], *, trials: int | None = None) -> ProfileReport:
+        return self.function.evaluate(cases, trials=trials)
 
     @property
     def external_tool_calls(self) -> int:
@@ -345,13 +378,19 @@ def build_agent(
     profile_options: dict[str, Any] = {
         "task": "smolagents_incident_triage",
         "scorer": exact_match,
+        "validator": validate_triage_run,
     }
     if store is not None:
         profile_options["store"] = store
 
     @profile(**profile_options)
-    def triage(service: str) -> str:
-        return str(upstream_agent.run(f"Triage service: {service}", reset=True))
+    def triage(service: str) -> AgentOutcome:
+        result = upstream_agent.run(
+            f"Triage service: {service}",
+            reset=True,
+            return_full_result=True,
+        )
+        return AgentOutcome(answer=str(result.output), state=result.state)
 
     return ProfiledSmolAgent(
         function=triage,

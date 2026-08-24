@@ -76,7 +76,9 @@ The default OpenRouter limit is one case even if `--limit` is omitted. That one
 case creates five complete agent executions: one baseline plus four tool
 ablations. With one tool call per turn and a final-answer turn, expect up to 25
 paid LLM requests. Check the model's current pricing before increasing the
-limit.
+limit. `--trials 3` repeats each ablation three times while keeping one
+baseline, so it can require up to 65 requests per case for this scripted
+one-tool-per-turn policy.
 
 ### Prove that an LLM actually ran
 
@@ -114,6 +116,7 @@ the random seed so the run can be reproduced:
 .venv/bin/python -m smolagents_profiler \
   --backend openrouter \
   --blind-cases 5 \
+  --trials 3 \
   --json .toolvalue/blind-openrouter-report.json \
   --store .toolvalue/blind-openrouter-profiles.db
 ```
@@ -146,6 +149,51 @@ the agent's poor recovery behavior.
 This is a useful profiler finding in its own right. A production evaluation
 must report execution-policy violations and retry costs alongside quality
 deltas, and it should not automatically remove a tool from one blind run.
+
+### The profiler fix
+
+The smolagents adapter now returns the upstream `RunResult.state` alongside the
+answer and validates every run before ToolValue attributes quality:
+
+- a baseline must terminate successfully, be correct, and call every required
+  tool exactly once;
+- an invalid baseline is retained but launches no counterfactuals;
+- a counterfactual must terminate successfully and obey the same one-call tool
+  policy;
+- max-step fallbacks, retries, and execution failures reduce attribution
+  coverage instead of producing a quality delta;
+- model-call and model-cost overhead are reported separately from valid
+  end-to-end quality;
+- repeated counterfactual trials expose LLM variance;
+- estimates below 80% valid coverage or spanning fewer than two cases render as
+  `insufficient` and cannot generate a skip recommendation.
+
+The corrected three-case, three-trial blind run used seed
+`1222080058851167187`:
+
+| Check | Observed |
+|---|---:|
+| Baseline answer accuracy | 3 / 3 (100%) |
+| Attribution-eligible baselines | 2 / 3 (66.7%) |
+| Counterfactual attempts | 24 |
+| Valid quality attributions | 11 / 24 (45.8%) |
+| Replay integrity | 100% |
+| Reliable tool estimates | 0 / 4 |
+| Fixture tool executions | 16 (12 ideal; one baseline duplicated all four) |
+| OpenRouter LLM calls | 120 |
+| Input / output tokens | 183,730 / 9,473 |
+| OpenRouter-reported cost | 0.022875 credits |
+
+The result is intentionally not a tool ranking. The profiler concludes that
+this agent/model pair is not stable enough under missing-tool conditions to
+support a defensible value claim. That is the correct outcome: improve the
+agent's unavailable-tool policy, then rerun the same seeded experiment.
+
+Even a valid quality delta measures end-to-end agent sensitivity to a missing
+tool output. It can include model sensitivity to the unavailable marker; it is
+not, by itself, proof that the tool's content is semantically causal. Use a
+deterministic decision boundary or repeated controlled trials before making
+that stronger claim.
 
 ## Run the deterministic local test
 

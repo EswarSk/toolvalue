@@ -61,12 +61,14 @@ class SmolagentsIntegrationTests(unittest.TestCase):
         self.assertEqual(agent.model_runs, 125)
         self.assertEqual(report.cases, 5)
         self.assertEqual(report.baseline_quality, 1.0)
+        self.assertEqual(report.baseline_eligibility, 1.0)
         self.assertEqual(report.replay_integrity, 1.0)
+        self.assertEqual(report.attribution_coverage, 1.0)
         self.assertEqual(len(stored), 5)
         self.assertTrue(all(len(case.counterfactuals) == 4 for case in report.profiles))
         self.assertTrue(
             all(
-                case.baseline.output == fixture.expected
+                case.baseline.output.answer == fixture.expected
                 for case, fixture in zip(report.profiles, INCIDENTS)
             )
         )

@@ -47,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="optional reproduction seed for --blind-cases",
     )
     parser.add_argument(
+        "--trials",
+        type=int,
+        default=1,
+        help="counterfactual repetitions per tool and case (use 3+ for real LLM variance)",
+    )
+    parser.add_argument(
         "--store",
         type=Path,
         default=Path(".toolvalue/profiles.db"),
@@ -65,6 +71,9 @@ def main(argv: list[str] | None = None) -> int:
     project_env = Path(__file__).resolve().parents[2] / ".env"
     load_dotenv(project_env, override=False)
     args = build_parser().parse_args(argv)
+    if args.trials < 1:
+        print("--trials must be at least 1", file=sys.stderr)
+        return 2
     if args.blind_cases is not None and args.limit is not None:
         print("Use either --blind-cases or --limit, not both", file=sys.stderr)
         return 2
@@ -106,27 +115,29 @@ def main(argv: list[str] | None = None) -> int:
         agent = build_agent(
             **agent_options,
         )
-        report = agent.evaluate(cases)
+        report = agent.evaluate(cases, trials=args.trials)
 
     tools_per_case = len(TOOL_ORDER)
     expected_tool_calls = len(cases) * tools_per_case
-    expected_model_runs = len(cases) * (tools_per_case + 1) ** 2
+    expected_model_runs = len(cases) * (tools_per_case + 1) * (1 + tools_per_case * args.trials)
 
     print(f"Hugging Face smolagents {smolagents.__version__}")
     print(f"Model backend: {agent.model_backend} ({agent.model_id})")
+    print(f"Counterfactual trials per tool/case: {args.trials}")
     print(render_report(report))
     print("\nBaseline incident decisions")
     for case, case_profile in zip(cases, report.profiles):
+        validity = "eligible" if case_profile.baseline.valid else f"ineligible ({case_profile.baseline.invalid_reason})"
         print(
             f"  {case.args[0]:22} "
-            f"predicted={case_profile.baseline.output:<12} "
+            f"predicted={case_profile.baseline.output.answer:<12} "
             f"expected={case.expected:<12} "
-            f"score={case_profile.baseline.score:.0%}"
+            f"score={case_profile.baseline.score:.0%} {validity}"
         )
     if blind_evaluation is not None:
         print(f"\nBlind scenario reveal (seed={blind_evaluation.seed})")
         predictions = {
-            case.args[0]: profile.baseline.output
+            case.args[0]: profile.baseline.output.answer
             for case, profile in zip(cases, report.profiles)
         }
         for scenario in blind_evaluation.reveal:
@@ -164,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
         "openrouter_reported_cost": agent.model_cost,
         "underlying_tool_executions": agent.external_tool_calls,
         "blind_evaluation": blind_evaluation is not None,
+        "counterfactual_trials": args.trials,
     }
     if blind_evaluation is not None:
         payload["experiment"]["blind_seed"] = blind_evaluation.seed
@@ -178,11 +190,11 @@ def main(argv: list[str] | None = None) -> int:
     if report.replay_integrity != 1.0:
         print("Replay integrity check failed", file=sys.stderr)
         return 1
-    if agent.external_tool_calls != expected_tool_calls:
-        print("Execution-count invariant failed", file=sys.stderr)
-        return 1
-    if any(len(case.counterfactuals) != tools_per_case for case in report.profiles):
-        print("Not every baseline called all four required tools", file=sys.stderr)
+    if any(
+        len(case.counterfactuals) != (tools_per_case * args.trials if case.baseline.valid else 0)
+        for case in report.profiles
+    ):
+        print("Baseline eligibility/counterfactual invariant failed", file=sys.stderr)
         return 1
     if args.backend == "scripted" and agent.model_runs != expected_model_runs:
         print("Scripted model-count invariant failed", file=sys.stderr)
