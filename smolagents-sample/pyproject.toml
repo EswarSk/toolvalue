@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toolvalue-smolagents-sample"
+version = "0.1.0"
+description = "ToolValue integration with Hugging Face smolagents"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["smolagents==1.26.0"]
+
+[project.scripts]
+profile-smolagents = "smolagents_profiler.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smolagents_profiler"]

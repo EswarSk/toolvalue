@@ -176,6 +176,49 @@ python3 -m venv .venv
 env -u GITHUB_TOKEN .venv/bin/python -m live_repo_profiler --limit 6
 ```
 
+## Integration with Hugging Face smolagents
+
+To test ToolValue inside a well-known agent runtime, we searched GitHub for
+actively maintained Python projects with native multi-tool execution. We chose
+[`huggingface/smolagents`](https://github.com/huggingface/smolagents)—about
+29,000 stars when evaluated—because its `ToolCallingAgent` is lightweight,
+model-agnostic, and runs locally without Docker.
+
+The [smolagents integration](smolagents-sample/README.md) pins the stable
+`smolagents==1.26.0` release and uses the actual upstream agent loop, tools,
+action/observation memory, and final-answer protocol. A scripted local model
+makes the run deterministic and key-free; output quality uses pure exact-match
+labels rather than model-as-judge scoring.
+
+Observed across five multi-tool incident-triage cases:
+
+| Result | Observed value |
+|---|---:|
+| Baseline accuracy | 100% |
+| Replay integrity | 100% |
+| Baseline fixture-tool executions | 20 / 20 expected |
+| Counterfactual fixture-tool executions | 0 |
+| Counterfactuals completed | 20 |
+| smolagents model-loop calls | 125 / 125 expected |
+
+| smolagents tool | Mean accuracy delta | Useful rate |
+|---|---:|---:|
+| Deployment signal | +40% | 40% |
+| Telemetry signal | +40% | 40% |
+| Runbook signal | +20% | 20% |
+| On-call lookup | 0% | 0% |
+
+The profiler correctly identified the on-call lookup as irrelevant to the
+classification decision while proving that counterfactuals did not reexecute
+the underlying tools.
+
+```bash
+cd smolagents-sample
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m smolagents_profiler
+```
+
 ## Strict replay
 
 Counterfactual runs never fetch new external evidence:
@@ -218,7 +261,8 @@ Implemented:
 - quality, cost, latency, useful-rate, harmful-rate, divergence, confidence
   interval, and value-per-dollar aggregation;
 - in-memory and SQLite metadata stores;
-- an executable fixture demo and a separate live public-API sample.
+- an executable fixture demo, a live public-API sample, and a real smolagents
+  integration.
 
 This is leave-one-out counterfactual value, not complete causal attribution.
 Redundant and interacting tools can require pairwise ablations or Shapley-style
@@ -230,4 +274,5 @@ decision.
 ```bash
 python3 -m unittest discover -s tests -v
 PYTHONPATH=sample-project/src:. python3 -m unittest discover -s sample-project/tests -v
+PYTHONPATH=smolagents-sample/src:. python3 -m unittest discover -s smolagents-sample/tests -v
 ```
