@@ -1,13 +1,18 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import experimentData from '../data/experiments.json';
 import {
   ablate, analyzeProfile, demoCases, formatDelta, formatPercent, segmentLabel, tools,
   type ProfileCase, type Segment, type ToolMetric, type ToolName,
 } from '../lib/profiler';
+import type { DashboardView, ResearchExperiment } from '../lib/experiments';
+import { ResearchDashboard } from './research-dashboard';
 
-type View = 'overview' | 'traces' | 'experiments' | 'policies' | 'evals';
+type View = DashboardView;
 type MetricMode = 'quality' | 'useful' | 'value';
+
+const researchExperiments = experimentData as ResearchExperiment[];
 
 const navigation: { group: string; items: { id: View; label: string; icon: string; count?: string }[] }[] = [
   { group: 'Analyze', items: [
@@ -100,7 +105,10 @@ export default function Home() {
   const [drawer, setDrawer] = useState<'policy' | 'experiment' | null>(null);
   const [runState, setRunState] = useState<'idle' | 'running' | 'complete'>('idle');
   const [profileVersion, setProfileVersion] = useState(4);
+  const [activeExperimentId, setActiveExperimentId] = useState(researchExperiments[0]?.id ?? 'industry-demo');
   const profile = useMemo(() => analyzeProfile(demoCases, segment), [segment, profileVersion]);
+  const activeResearch = researchExperiments.find(item => item.id === activeExperimentId);
+  const activeTitle = activeResearch?.title ?? 'Industry classification';
 
   useEffect(() => {
     if (runState !== 'running') return;
@@ -114,6 +122,20 @@ export default function Home() {
   function navigate(next: View) {
     setView(next);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function selectExperiment(id: string) {
+    setActiveExperimentId(id);
+    setDrawer(null);
+    setView('overview');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function navigationCount(item: { id: View; count?: string }) {
+    if (!activeResearch) return item.count;
+    if (item.id === 'traces') return String(activeResearch.cases);
+    if (item.id === 'policies') return '1';
+    return undefined;
   }
 
   function startExperiment() {
@@ -134,12 +156,12 @@ export default function Home() {
         <button className="brand" onClick={() => navigate('overview')}><Mark /><span>toolvalue</span><i>beta</i></button>
         <div className="workspace">
           <span className="workspace-avatar">B</span>
-          <span><b>Baselayer</b><small>Business enrichment</small></span>
+          <span><b>Baselayer</b><small>{activeResearch ? 'Research source profiling' : 'Business enrichment'}</small></span>
           <i>⌄</i>
         </div>
         <nav aria-label="Product navigation">
           {navigation.map(group => <div key={group.group}><p>{group.group}</p>{group.items.map(item => (
-            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span>{item.icon}</span>{item.label}{item.count && <em>{item.count}</em>}</button>
+            <button key={item.id} className={view === item.id ? 'active' : ''} onClick={() => navigate(item.id)}><span>{item.icon}</span>{item.label}{navigationCount(item) && <em>{navigationCount(item)}</em>}</button>
           ))}</div>)}
         </nav>
         <div className="sidebar-bottom">
@@ -150,10 +172,11 @@ export default function Home() {
 
       <section className="content">
         <header className="topbar">
-          <div className="breadcrumbs"><span>Industry classification</span><i>/</i><b>{navigation.flatMap(group => group.items).find(item => item.id === view)?.label}</b></div>
-          <div className="top-actions"><button className="icon-button" aria-label="Notifications">●</button><button className="run-button" onClick={startExperiment}>Run experiment <span>R</span></button></div>
+          <div className="breadcrumbs"><span>{activeTitle}</span><i>/</i><b>{navigation.flatMap(group => group.items).find(item => item.id === view)?.label}</b></div>
+          <div className="top-actions"><label className="experiment-switcher"><span>Experiment</span><select aria-label="Select dashboard experiment" value={activeExperimentId} onChange={event => selectExperiment(event.target.value)}>{researchExperiments.map(item => <option value={item.id} key={item.id}>{item.label}</option>)}<option value="industry-demo">Industry classification · demo</option></select></label><button className="icon-button" aria-label="Notifications">●</button>{activeResearch ? <button className="run-button" onClick={() => navigate('experiments')}>View run <span>↗</span></button> : <button className="run-button" onClick={startExperiment}>Run experiment <span>R</span></button>}</div>
         </header>
 
+        {activeResearch ? <ResearchDashboard experiment={activeResearch} history={researchExperiments} view={view} onNavigate={navigate} /> : <>
         {view === 'overview' && <div className="page">
           <div className="title-row">
             <div><div className="eyebrow"><span className="live-dot" />PROFILE COMPLETE <i>·</i> {profile.cases.length} CASES</div><h1>Industry classification</h1><p>Leave-one-out value profile <span>·</span> v1.{profileVersion} <span>·</span> Updated just now</p></div>
@@ -201,9 +224,10 @@ export default function Home() {
           <section className="eval-grid"><article className="panel eval-card"><div><span className="dataset-icon">✓</span><i>ACTIVE</i></div><h2>businesses_gold_v3</h2><p>Hand-labeled industry classification cases with developer-provided segmentation.</p><div className="dataset-stats"><span><b>128</b><small>Cases</small></span><span><b>5</b><small>Segments</small></span><span><b>2</b><small>Scorers</small></span></div><button onClick={() => navigate('traces')}>Open dataset <span>→</span></button></article><article className="panel scorer-card"><span className="micro-label">SCORER CONFIGURATION</span><h2>Deterministic first</h2><p>ToolValue does not decide what “correct” means. This task uses business metrics supplied by the developer.</p><pre><code><i>score</i> = 0.75 * industry_accuracy<br />&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;+ 0.25 * evidence_grounding</code></pre><div><span>industry_accuracy</span><b>0.75</b></div><div><span>evidence_grounding</span><b>0.25</b></div></article></section>
           <section className="integration-panel panel"><div><span className="micro-label">THREE LINES TO INSTRUMENT</span><h2>Own the insight, not the runtime.</h2><p>ToolValue wraps the task and tool boundaries without becoming another agent framework.</p></div><pre><code><span>@profile</span>(task=<i>"industry_classification"</i>, scorer=accuracy)<br /><b>async def</b> enrich(business):<br />&nbsp;&nbsp;&nbsp;&nbsp;...</code></pre></section>
         </div>}
+        </>}
       </section>
 
-      {drawer && <div className="overlay" role="dialog" aria-modal="true" aria-label={drawer === 'policy' ? 'Policy recommendation' : 'Experiment status'} onMouseDown={event => { if (event.target === event.currentTarget) setDrawer(null); }}><aside className="drawer">
+      {drawer && !activeResearch && <div className="overlay" role="dialog" aria-modal="true" aria-label={drawer === 'policy' ? 'Policy recommendation' : 'Experiment status'} onMouseDown={event => { if (event.target === event.currentTarget) setDrawer(null); }}><aside className="drawer">
         <button className="drawer-close" onClick={() => setDrawer(null)} aria-label="Close">×</button>
         {drawer === 'policy' ? <><span className="drawer-kicker">POLICY 01 · HIGH CONFIDENCE</span><h2>Skip reviews for professional services</h2><p className="drawer-lede">A conditional skip captures most of the savings without removing the tool where it matters.</p><div className="drawer-chart"><div><span>Professional services</span><b>+0.1pp</b><i style={{ width: '4%' }} /></div><div><span>Restaurants</span><b>+3.6pp</b><i style={{ width: '74%' }} /></div><div><span>Retail</span><b>+0.8pp</b><i style={{ width: '20%' }} /></div></div><div className="drawer-rule"><small>PROPOSED CONDITION</small><code><span>if</span> segment == <i>"professional_services"</i><br />&nbsp;&nbsp;<span>and</span> homepage.status == <i>"success"</i>:<br />&nbsp;&nbsp;&nbsp;&nbsp;skip(<b>reviews</b>)</code></div><div className="guardrails"><h3>Guardrails</h3><label><span>Minimum quality retention</span><b>99.0%</b></label><label><span>Re-evaluate after</span><b>1,000 runs</b></label><label><span>Automatic production changes</span><b className="off">Off</b></label></div><button className="primary-button full-button" onClick={() => { setDrawer(null); setView('policies'); }}>Open policy workspace <span>→</span></button><small className="disclaimer">Recommendation only. ToolValue never changes production routing.</small></> : <><span className="drawer-kicker">COUNTERFACTUAL PROFILE</span><h2>{runState === 'complete' ? 'Profile complete' : 'Running 768 replays'}</h2><p className="drawer-lede">{runState === 'complete' ? 'All frozen-evidence experiments finished successfully.' : 'No external APIs are called during strict replay.'}</p><div className={`run-visual ${runState}`}><div className="run-ring"><span>{runState === 'complete' ? '✓' : '◎'}</span></div><b>{runState === 'complete' ? '100%' : 'Analyzing'}</b><small>{runState === 'complete' ? '765 valid · 3 diverged' : 'search · homepage · registry · reviews'}</small></div><div className="run-steps"><span className="done">Baseline recorded <i>128/128</i></span><span className="done">External evidence frozen <i>100%</i></span><span className={runState === 'complete' ? 'done' : 'active'}>Leave-one-out replays <i>{runState === 'complete' ? '768/768' : '•••'}</i></span><span className={runState === 'complete' ? 'done' : ''}>Aggregate & recommend <i>{runState === 'complete' ? 'Done' : 'Queued'}</i></span></div>{runState === 'complete' && <button className="primary-button full-button" onClick={() => { setDrawer(null); setView('overview'); }}>View new profile <span>→</span></button>}</>}
       </aside></div>}

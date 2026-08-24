@@ -1,0 +1,371 @@
+[
+  {
+    "id": "gpt-researcher-10",
+    "label": "GPT Researcher · 10 blind papers",
+    "title": "Scholarly source review",
+    "task": "gpt_researcher_scholarly_source_review",
+    "status": "complete",
+    "completedAt": "2026-08-24T18:41:18.834398+00:00",
+    "cases": 10,
+    "eligibleCases": 10,
+    "baselineQuality": 1,
+    "baselineEligibility": 1,
+    "averageCost": 0.000104265,
+    "averageLatencyMs": 3535.7129707997956,
+    "replayIntegrity": 1,
+    "attributionCoverage": 1,
+    "tools": [
+      {
+        "name": "crossref",
+        "label": "Crossref",
+        "attempts": 30,
+        "runs": 30,
+        "independentCases": 10,
+        "meanQualityDelta": 0.03333333333333333,
+        "positiveRate": 0.1,
+        "zeroValueRate": 0.9,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 182.04342489952978,
+        "confidenceInterval95": [
+          -0.003062952949368841,
+          0.06972961961603551
+        ]
+      },
+      {
+        "name": "open_citations",
+        "label": "OpenCitations",
+        "attempts": 30,
+        "runs": 30,
+        "independentCases": 10,
+        "meanQualityDelta": 0.03333333333333333,
+        "positiveRate": 0.1,
+        "zeroValueRate": 0.9,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 516.2517165001191,
+        "confidenceInterval95": [
+          -0.003062952949368841,
+          0.06972961961603551
+        ]
+      },
+      {
+        "name": "europe_pmc",
+        "label": "Europe PMC",
+        "attempts": 30,
+        "runs": 30,
+        "independentCases": 10,
+        "meanQualityDelta": 0,
+        "positiveRate": 0,
+        "zeroValueRate": 1,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 972.9311125000095,
+        "confidenceInterval95": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "openalex",
+        "label": "OpenAlex",
+        "attempts": 30,
+        "runs": 30,
+        "independentCases": 10,
+        "meanQualityDelta": 0,
+        "positiveRate": 0,
+        "zeroValueRate": 1,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 280.2690417996928,
+        "confidenceInterval95": [
+          0,
+          0
+        ]
+      }
+    ],
+    "upstream": "assafelovic/gpt-researcher",
+    "upstreamVersion": "0.14.7",
+    "writerBackend": "gpt-researcher",
+    "modelId": "openai/gpt-4o-mini",
+    "sourceMode": "public",
+    "sourceExecutions": 40,
+    "modelRuns": 130,
+    "reportedModelCost": 0.01177139999999999,
+    "counterfactualTrials": 3,
+    "blindSeed": "4567280523530631214",
+    "caseResults": [
+      {
+        "index": 1,
+        "doi": "10.1038/nature14539",
+        "title": "Deep learning",
+        "year": 2015,
+        "firstAuthor": "Yann LeCun",
+        "venue": "Nature",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 2,
+        "doi": "10.1016/S0169-7552(98)00110-X",
+        "title": "The anatomy of a large-scale hypertextual Web search engine",
+        "year": 1998,
+        "firstAuthor": "Sergey Brin",
+        "venue": "Computer Networks and ISDN Systems",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 3,
+        "doi": "10.7554/eLife.00971",
+        "title": "Complete dissection of transcription elongation reveals slow translocation of RNA polymerase II in a linear ratchet mechanism",
+        "year": 2013,
+        "firstAuthor": "Manchuta Dangkulwanich",
+        "venue": "eLife",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 4,
+        "doi": "10.18653/v1/N19-1423",
+        "title": "BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding",
+        "year": 2019,
+        "firstAuthor": "Jacob Devlin",
+        "venue": "NAACL-HLT",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": [
+          {
+            "source": "open_citations",
+            "sourceLabel": "OpenCitations",
+            "meanDelta": 0.3333333333333333,
+            "affectedFields": [
+              "title"
+            ],
+            "trials": 3
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "doi": "10.1007/978-3-319-24574-4_28",
+        "title": "U-Net: Convolutional Networks for Biomedical Image Segmentation",
+        "year": 2015,
+        "firstAuthor": "Olaf Ronneberger",
+        "venue": "MICCAI",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 6,
+        "doi": "10.1126/science.1225829",
+        "title": "A Programmable Dual-RNA–Guided DNA Endonuclease in Adaptive Bacterial Immunity",
+        "year": 2012,
+        "firstAuthor": "Martin Jinek",
+        "venue": "Science",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": [
+          {
+            "source": "crossref",
+            "sourceLabel": "Crossref",
+            "meanDelta": 0.3333333333333333,
+            "affectedFields": [
+              "first_author"
+            ],
+            "trials": 3
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "doi": "10.1023/A:1010933404324",
+        "title": "Random Forests",
+        "year": 2001,
+        "firstAuthor": "Leo Breiman",
+        "venue": "Machine Learning",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 8,
+        "doi": "10.1109/CVPR.2016.90",
+        "title": "Deep Residual Learning for Image Recognition",
+        "year": 2016,
+        "firstAuthor": "Kaiming He",
+        "venue": "CVPR",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 9,
+        "doi": "10.1038/s41586-021-03819-2",
+        "title": "Highly accurate protein structure prediction with AlphaFold",
+        "year": 2021,
+        "firstAuthor": "John Jumper",
+        "venue": "Nature",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 10,
+        "doi": "10.1145/279227.279229",
+        "title": "The part-time parliament",
+        "year": 1998,
+        "firstAuthor": "Leslie Lamport",
+        "venue": "ACM Transactions on Computer Systems",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      }
+    ]
+  },
+  {
+    "id": "gpt-researcher-3",
+    "label": "GPT Researcher · 3 blind papers",
+    "title": "Scholarly source review",
+    "task": "gpt_researcher_scholarly_source_review",
+    "status": "complete",
+    "completedAt": "2026-08-24T18:25:52.713731+00:00",
+    "cases": 3,
+    "eligibleCases": 3,
+    "baselineQuality": 1,
+    "baselineEligibility": 1,
+    "averageCost": 0.0001064,
+    "averageLatencyMs": 3510.4420556672267,
+    "replayIntegrity": 1,
+    "attributionCoverage": 1,
+    "tools": [
+      {
+        "name": "crossref",
+        "label": "Crossref",
+        "attempts": 9,
+        "runs": 9,
+        "independentCases": 3,
+        "meanQualityDelta": 0.1111111111111111,
+        "positiveRate": 0.3333333333333333,
+        "zeroValueRate": 0.6666666666666666,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 185.21334699956546,
+        "confidenceInterval95": [
+          0.002222222222222195,
+          0.22000000000000003
+        ]
+      },
+      {
+        "name": "europe_pmc",
+        "label": "Europe PMC",
+        "attempts": 9,
+        "runs": 9,
+        "independentCases": 3,
+        "meanQualityDelta": 0,
+        "positiveRate": 0,
+        "zeroValueRate": 1,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 553.8164439991912,
+        "confidenceInterval95": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "open_citations",
+        "label": "OpenCitations",
+        "attempts": 9,
+        "runs": 9,
+        "independentCases": 3,
+        "meanQualityDelta": 0,
+        "positiveRate": 0,
+        "zeroValueRate": 1,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 590.957638999195,
+        "confidenceInterval95": [
+          0,
+          0
+        ]
+      },
+      {
+        "name": "openalex",
+        "label": "OpenAlex",
+        "attempts": 9,
+        "runs": 9,
+        "independentCases": 3,
+        "meanQualityDelta": 0,
+        "positiveRate": 0,
+        "zeroValueRate": 1,
+        "attributionCoverage": 1,
+        "reliable": true,
+        "averageLatencyMs": 293.02469433362904,
+        "confidenceInterval95": [
+          0,
+          0
+        ]
+      }
+    ],
+    "upstream": "assafelovic/gpt-researcher",
+    "upstreamVersion": "0.14.7",
+    "writerBackend": "gpt-researcher",
+    "modelId": "openai/gpt-4o-mini",
+    "sourceMode": "public",
+    "sourceExecutions": 12,
+    "modelRuns": 39,
+    "reportedModelCost": 0.003607499999999999,
+    "counterfactualTrials": 3,
+    "blindSeed": "6520464970306572530",
+    "caseResults": [
+      {
+        "index": 1,
+        "doi": "10.1109/CVPR.2016.90",
+        "title": "Deep Residual Learning for Image Recognition",
+        "year": 2016,
+        "firstAuthor": "Kaiming He",
+        "venue": "CVPR",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 2,
+        "doi": "10.1371/journal.pone.0029797",
+        "title": "Ecological Guild Evolution and the Discovery of the World's Smallest Vertebrate",
+        "year": 2012,
+        "firstAuthor": "Eric N. Rittmeyer",
+        "venue": "PLoS ONE",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": []
+      },
+      {
+        "index": 3,
+        "doi": "10.1371/journal.pone.0000308",
+        "title": "Sharing Detailed Research Data Is Associated with Increased Citation Rate",
+        "year": 2007,
+        "firstAuthor": "Heather A. Piwowar",
+        "venue": "PLoS ONE",
+        "baselineScore": 1,
+        "eligible": true,
+        "effects": [
+          {
+            "source": "crossref",
+            "sourceLabel": "Crossref",
+            "meanDelta": 0.3333333333333333,
+            "affectedFields": [
+              "first_author"
+            ],
+            "trials": 3
+          }
+        ]
+      }
+    ]
+  }
+]

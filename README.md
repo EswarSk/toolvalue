@@ -306,6 +306,23 @@ cp .env.example .env  # add OPENROUTER_API_KEY locally
   --backend gpt-researcher --sources public --blind-cases 10 --trials 3
 ```
 
+### View a run in the dashboard
+
+The dashboard reads normalized profiler output from `data/experiments.json`
+and opens on the real ten-case GPT Researcher run by default. After generating
+a new report, sync it and start the app:
+
+```bash
+cd ..
+npm run sync:experiments
+npm run dev
+```
+
+Use the experiment picker in the top bar to switch between the ten-case run,
+the earlier three-case run, and the original product demo. The Overview,
+Cases, Experiments, Policy, and Eval set pages all use the selected run's
+recorded metrics; the source table can also be exported as CSV.
+
 ## Strict replay
 
 Counterfactual runs never fetch new external evidence:

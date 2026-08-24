@@ -172,6 +172,22 @@ for a global retrieval-policy change. Europe PMC was also the slowest source
 in this run at roughly 973 ms on average, making it the strongest candidate for
 a larger conditional-skip experiment.
 
+## Dashboard
+
+The root dashboard is connected to these report files through a small sync
+step. After a profiler run, return to the repository root and refresh its
+checked-in dashboard dataset:
+
+```bash
+cd ..
+npm run sync:experiments
+npm run dev
+```
+
+The experiment picker contains both live runs. The dashboard shows baseline
+accuracy, replay and attribution coverage, real source/model execution counts,
+per-source quality/latency/cost metrics, and the individual blind paper cases.
+
 ## Test
 
 ```bash
