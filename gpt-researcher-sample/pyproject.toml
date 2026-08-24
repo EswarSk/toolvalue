@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "toolvalue-gpt-researcher-sample"
+version = "0.1.0"
+description = "ToolValue source-attribution experiment for GPT Researcher"
+requires-python = ">=3.12"
+dependencies = [
+  # PyPI 0.16.0 imports typing symbols after their first use on Python 3.12.
+  # Pin the upstream commit that fixes the package import order.
+  "gpt-researcher @ git+https://github.com/assafelovic/gpt-researcher.git@6f998577d547b1e54ec662dac63583aa11e3b84b",
+  "python-dotenv>=1.1.0",
+]
+
+[project.scripts]
+profile-gpt-researcher = "gpt_researcher_profiler.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gpt_researcher_profiler"]
+
+[tool.hatch.metadata]
+allow-direct-references = true

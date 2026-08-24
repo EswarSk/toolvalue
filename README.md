@@ -271,6 +271,41 @@ three or more trials when measuring a real LLM:
   --backend openrouter --blind-cases 5 --trials 3
 ```
 
+## Controlled research-source attribution with GPT Researcher
+
+The separate [GPT Researcher integration](gpt-researcher-sample/README.md) runs
+ToolValue against the real
+[`assafelovic/gpt-researcher`](https://github.com/assafelovic/gpt-researcher)
+publisher. Four annotated tools fetch competing scholarly metadata from
+Crossref, OpenAlex, OpenCitations, and Europe PMC. The OpenRouter-backed
+researcher reconciles the frozen records, and exact held-out paper metadata
+scores each leave-one-source-out answer.
+
+In the first three-case, three-trial blind run:
+
+| Check | Observed |
+|---|---:|
+| Exact baseline answers | 3 / 3 |
+| Replay integrity / attribution coverage | 100% / 100% |
+| Public source executions | 12 / 12 expected; 0 in counterfactuals |
+| GPT Researcher writer runs | 39 / 39 expected |
+| GPT Researcher reported cost | 0.003607 credits |
+
+Crossref had an +11.1% mean quality delta because it preserved the exact author
+form in one name conflict. Each of the other three sources had a 0% marginal
+delta: on this small dataset, the remaining evidence recovered the same gold
+answer whenever any one of them was omitted. This is a conditional redundancy
+finding, not a recommendation to remove those sources globally.
+
+```bash
+cd gpt-researcher-sample
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+cp .env.example .env  # add OPENROUTER_API_KEY locally
+.venv/bin/profile-gpt-researcher \
+  --backend gpt-researcher --sources public --blind-cases 3 --trials 3
+```
+
 ## Strict replay
 
 Counterfactual runs never fetch new external evidence:
