@@ -116,15 +116,17 @@ revealed only after the profile finishes:
 .venv/bin/profile-gpt-researcher \
   --backend gpt-researcher \
   --sources public \
-  --blind-cases 3 \
+  --blind-cases 10 \
   --trials 3 \
   --json .toolvalue/live-openrouter-report.json \
   --store .toolvalue/live-openrouter.db
 ```
 
-For three papers, expect exactly 12 external source requests: four in each
-baseline and zero in counterfactuals. Expect 39 GPT Researcher writer runs:
-three baselines plus `3 papers × 4 omitted sources × 3 trials`.
+The benchmark contains 15 curated papers spanning computing, biology, physics,
+and medicine. For ten sampled papers, expect exactly 40 external source
+requests: four in each baseline and zero in counterfactuals. Expect 130 GPT
+Researcher writer runs: ten baselines plus
+`10 papers × 4 omitted sources × 3 trials`.
 
 The CLI rejects invalid baselines instead of manufacturing a ranking. A valid
 baseline must answer all three fields exactly and call every source exactly
@@ -133,37 +135,42 @@ quality deltas.
 
 ## Live result
 
-The first completed blind run used seed `6520464970306572530` with public APIs,
-GPT Researcher's real publisher, and `openai/gpt-4o-mini` through OpenRouter:
+The larger blind run used seed `4567280523530631214` with public APIs, GPT
+Researcher's real publisher, and `openai/gpt-4o-mini` through OpenRouter:
 
 | Check | Observed |
 |---|---:|
-| Exact baseline answers | 3 / 3 |
-| Attribution-eligible baselines | 3 / 3 |
+| Exact baseline answers | 10 / 10 |
+| Attribution-eligible baselines | 10 / 10 |
 | Replay integrity | 100% |
 | Attribution coverage | 100% |
 | Reliable source estimates | 4 / 4 |
-| Public source executions | 12 / 12 expected |
-| GPT Researcher writer runs | 39 / 39 expected |
-| GPT Researcher reported cost | 0.003607 credits |
+| Public source executions | 40 / 40 expected |
+| Counterfactual source executions | 0 |
+| GPT Researcher writer runs | 130 / 130 expected |
+| GPT Researcher reported cost | 0.011771 credits |
 
 | Omitted source | Mean answer-quality delta | Useful cases | Interpretation for this sample |
 |---|---:|---:|---|
-| Crossref | +11.1% | 1 / 3 | It preserved the exact first-author form in one conflict |
-| OpenAlex | 0.0% | 0 / 3 | Remaining sources recovered the same gold answers |
-| OpenCitations | 0.0% | 0 / 3 | Remaining sources recovered the same gold answers |
-| Europe PMC | 0.0% | 0 / 3 | Remaining sources recovered the same gold answers |
+| Crossref | +3.3% | 1 / 10 | Its corroboration resolved one first-author conflict |
+| OpenCitations | +3.3% | 1 / 10 | It uniquely supplied the BERT title |
+| OpenAlex | 0.0% | 0 / 10 | Remaining sources recovered the same gold answers |
+| Europe PMC | 0.0% | 0 / 10 | Remaining sources recovered the same gold answers |
 
-The Crossref effect came from the Piwowar paper. Crossref supplied the exact
-gold form `Heather A. Piwowar`; OpenAlex and OpenCitations supplied
-`Heather Piwowar`, while Europe PMC supplied `Piwowar HA`. With Crossref
-removed, GPT Researcher chose a non-gold author form in all three trials,
-reducing that case from 3/3 to 2/3 correct fields.
+OpenCitations was essential for the BERT case: the other three APIs did not
+supply its title, so all three omissions reduced that answer from 3/3 to 2/3
+correct fields. Crossref mattered for the CRISPR paper's author spelling. It
+corroborated OpenCitations' `Martin Jinek` against OpenAlex's `Martin Jínek` and
+Europe PMC's `Jinek M`; removing Crossref lost the exact author field in all
+three trials.
 
-The conclusion is conditional, not universal: for these three DOI lookups,
-three source calls were redundant under leave-one-out evaluation. The sample
-is intentionally small, so use more blind cases before changing a production
-retrieval policy.
+The result is still conditional rather than universal. Crossref and
+OpenCitations were useful in 10% of cases; OpenAlex and Europe PMC were fully
+redundant under these leave-one-out tests. The 95% intervals for the two
+positive mean effects include zero, so this is not yet statistical evidence
+for a global retrieval-policy change. Europe PMC was also the slowest source
+in this run at roughly 973 ms on average, making it the strongest candidate for
+a larger conditional-skip experiment.
 
 ## Test
 

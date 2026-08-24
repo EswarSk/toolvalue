@@ -26,7 +26,7 @@ class GPTResearcherIntegrationTests(unittest.IsolatedAsyncioTestCase):
     async def test_source_results_are_frozen_and_open_citations_adds_unique_value(self) -> None:
         cases = [
             EvalCase(args=(paper.doi,), expected=paper.expected)
-            for paper in PAPERS
+            for paper in PAPERS[:5]
         ]
         with tempfile.TemporaryDirectory() as directory:
             with SQLiteStore(Path(directory) / "profiles.db") as store:

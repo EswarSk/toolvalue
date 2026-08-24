@@ -281,21 +281,21 @@ Crossref, OpenAlex, OpenCitations, and Europe PMC. The OpenRouter-backed
 researcher reconciles the frozen records, and exact held-out paper metadata
 scores each leave-one-source-out answer.
 
-In the first three-case, three-trial blind run:
+In the larger ten-case, three-trial blind run:
 
 | Check | Observed |
 |---|---:|
-| Exact baseline answers | 3 / 3 |
+| Exact baseline answers | 10 / 10 |
 | Replay integrity / attribution coverage | 100% / 100% |
-| Public source executions | 12 / 12 expected; 0 in counterfactuals |
-| GPT Researcher writer runs | 39 / 39 expected |
-| GPT Researcher reported cost | 0.003607 credits |
+| Public source executions | 40 / 40 expected; 0 in counterfactuals |
+| GPT Researcher writer runs | 130 / 130 expected |
+| GPT Researcher reported cost | 0.011771 credits |
 
-Crossref had an +11.1% mean quality delta because it preserved the exact author
-form in one name conflict. Each of the other three sources had a 0% marginal
-delta: on this small dataset, the remaining evidence recovered the same gold
-answer whenever any one of them was omitted. This is a conditional redundancy
-finding, not a recommendation to remove those sources globally.
+Crossref and OpenCitations each had a +3.3% mean quality delta and were useful
+in one of ten cases. OpenCitations uniquely supplied the BERT title, while
+Crossref resolved one CRISPR author-name conflict. OpenAlex and Europe PMC each
+had a 0% marginal delta. These are conditional findings; the positive effects'
+95% intervals still include zero, so this is not a global removal recommendation.
 
 ```bash
 cd gpt-researcher-sample
@@ -303,7 +303,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
 cp .env.example .env  # add OPENROUTER_API_KEY locally
 .venv/bin/profile-gpt-researcher \
-  --backend gpt-researcher --sources public --blind-cases 3 --trials 3
+  --backend gpt-researcher --sources public --blind-cases 10 --trials 3
 ```
 
 ## Strict replay

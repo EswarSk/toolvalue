@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="OpenRouter model used by GPT Researcher",
     )
     parser.add_argument("--limit", type=int, help="number of curated DOI cases")
-    parser.add_argument("--blind-cases", type=int, help="randomly select 1-5 held-out DOI cases")
+    parser.add_argument("--blind-cases", type=int, help="number of randomly selected held-out DOI cases")
     parser.add_argument("--blind-seed", type=int, help="seed used to reproduce blind selection")
     parser.add_argument(
         "--trials",
